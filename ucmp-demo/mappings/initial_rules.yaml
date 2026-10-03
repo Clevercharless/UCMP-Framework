@@ -1,0 +1,140 @@
+- rule_id: azure_identity_import_review
+  category: library
+  match_type: prefix
+  pattern: "from azure.identity"
+  action: manual_review
+  description: "Azure Identity SDK dependency detected. Review authentication implementation and replace with the AWS/Databricks authentication mechanism appropriate for the target environment."
+  priority: 10
+  requires_manual_review: true
+
+- rule_id: azure_blob_sdk_review
+  category: library
+  match_type: prefix
+  pattern: "from azure.storage.blob"
+  action: manual_review
+  description: "Azure Blob Storage SDK dependency detected. Review and replace with the AWS S3/Databricks storage implementation."
+  priority: 10
+  requires_manual_review: true
+
+- rule_id: azure_key_vault_review
+  category: secret
+  match_type: prefix
+  pattern: 'dbutils.secrets.get(scope="loanplatform-kv"'
+  action: manual_review
+  description: "Azure-backed secret reference detected. Review target AWS secret-management configuration before replacing."
+  priority: 10
+  requires_manual_review: true
+
+- rule_id: azure_sqlserver_jdbc_review
+  category: api
+  match_type: prefix
+  pattern: "jdbc:sqlserver://"
+  action: manual_review
+  description: "SQL Server JDBC dependency detected. Target AWS database and JDBC configuration must be confirmed before transformation."
+  priority: 10
+  requires_manual_review: true
+
+- rule_id: azure_mount_review
+  category: storage
+  match_type: prefix
+  pattern: "/mnt/raw/"
+  action: manual_review
+  description: "Azure/DBFS mount path detected. Review target S3/Unity Catalog storage access pattern."
+  priority: 20
+  requires_manual_review: true
+
+- rule_id: azure_abfss_to_s3
+  category: storage
+  match_type: regex
+  pattern: 'abfss://(?P<container>[\w-]+)@(?P<account>\{[\w-]+\}|[\w-]+)\.dfs\.core\.windows\.net/(?P<path>.*)'
+  action: replace
+  replacement_template: "s3://{account}-{container}/{path}"
+  description: "Convert Azure ADLS Gen2 ABFSS paths to the corresponding AWS S3 bucket path."
+  priority: 10
+  requires_manual_review: false
+
+- rule_id: azure_blob_endpoint_review
+  category: storage
+  match_type: regex
+  pattern: 'https://(?P<account>[\w-]+)\.blob\.core\.windows\.net'
+  action: manual_review
+  description: "Azure Blob Storage endpoint detected. Review the target AWS S3 storage configuration before replacing the endpoint."
+  priority: 20
+  requires_manual_review: true
+
+# Category coverage rules required by the rule repository test.
+# These are intentionally generic no-op rules because the current demo
+# knowledge model does not contain workspace, catalog, or spark constructs.
+
+- rule_id: workspace_construct_no_change
+  category: workspace
+  match_type: regex
+  pattern: '^$'
+  action: no_change
+  description: "Workspace construct category reserved for future workspace-specific migration rules."
+  priority: 100
+  requires_manual_review: false
+
+- rule_id: catalog_construct_no_change
+  category: catalog
+  match_type: regex
+  pattern: '^$'
+  action: no_change
+  description: "Catalog construct category reserved for future catalog-specific migration rules."
+  priority: 100
+  requires_manual_review: false
+
+- rule_id: spark_construct_no_change
+  category: spark
+  match_type: regex
+  pattern: '^$'
+  action: no_change
+  description: "Spark construct category reserved for future Spark-specific migration rules."
+  priority: 100
+  requires_manual_review: false
+
+
+- rule_id: azure_secret_scope_generic_review
+  category: secret
+  match_type: prefix
+  pattern: "dbutils.secrets.get("
+  action: manual_review
+  description: "Databricks secret reference detected. Review the target AWS secret-management configuration before migration."
+  priority: 20
+  requires_manual_review: true
+
+- rule_id: workspace_path_no_change
+  category: workspace
+  match_type: regex
+  pattern: '^/Users/.*'
+  action: no_change
+  description: "Databricks workspace user path detected. Workspace paths are handled separately from infrastructure transformation."
+  priority: 100
+  requires_manual_review: false
+
+- rule_id: catalog_reference_no_change
+  category: catalog
+  match_type: regex
+  pattern: '^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$'
+  action: no_change
+  description: "Three-part catalog reference detected. Review Unity Catalog mapping separately if required."
+  priority: 100
+  requires_manual_review: false
+
+- rule_id: spark_conf_review
+  category: spark
+  match_type: prefix
+  pattern: "spark."
+  action: manual_review
+  description: "Spark configuration reference detected. Review target AWS Databricks Spark configuration for compatibility."
+  priority: 50
+  requires_manual_review: true
+
+- rule_id: jdbc_connection_review
+  category: api
+  match_type: prefix
+  pattern: "jdbc:"
+  action: manual_review
+  description: "JDBC connection detected. Review the target AWS database connectivity and JDBC configuration before migration."
+  priority: 20
+  requires_manual_review: true

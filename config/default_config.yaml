@@ -1,0 +1,65 @@
+# default_config.yaml
+# ---------------------------------------------------------------------------
+# Baseline configuration for UCMP. Every key here can be overridden by:
+#   1. A user-supplied YAML file (merged on top of these defaults)
+#   2. Environment variables prefixed UCMP__ (highest precedence)
+#
+# This file ships with ucmp-core and must always be a complete, valid,
+# schema-passing configuration on its own — it is the fallback of last
+# resort when no config file is supplied.
+# ---------------------------------------------------------------------------
+
+project:
+  name: "Universal Cloud Migration Platform"
+  version: "1.0.0"
+
+source:
+  platform: "azure_databricks"
+  repo_path: "/Workspace/Users/charless.k@ganitinc.com/Loan-Platform"
+  workspace_url: "https://adb-simulated.azuredatabricks.net"
+  key_vault_name: "simulated-kv"
+  # local_repo preserves the existing demo behavior. Set to workspace for real Databricks testing.
+  source_mode: "local_repo"
+  access_token_env: "DATABRICKS_AZURE_TOKEN"
+  workspace_path: "/"
+
+target:
+  platform: "aws_databricks"
+  repo_path: "ucmp-demo/output/Loan-Platform-AWS"
+  workspace_url: "https://simulated.cloud.databricks.com"
+  catalog_name: "simulated_unity_catalog"
+
+pipeline:
+  fail_fast: true
+  dry_run: true
+
+rules:
+  rules_dir: "ucmp-demo/mappings"
+
+output:
+  # separate = write a migrated copy; in_place = write transformed files back
+  # into source.repo_path while preserving the existing folder structure.
+  mode: "in_place"
+  reports_dir: "ucmp-demo/reports"
+  knowledge_model_dir: "ucmp-demo/reports/knowledge_model"
+
+logging:
+  level: "INFO"
+
+
+migration:
+  # Preferred: put the exact notebooks to migrate here. This list is authoritative.
+  # A notebook discovered only as a dependency is reported but is NOT added automatically.
+  notebook_list: []
+
+  # Optional legacy file-based notebook list. Used only when notebook_list is empty.
+  notebook_list_file: ""
+  notebook_path_column: "Notebook Path"
+
+  # Azure container -> AWS S3 bucket mapping.
+  container_bucket_mapping: {}
+
+  # Optional legacy mapping file. Inline mapping above takes precedence.
+  container_bucket_mapping_file: ""
+  workspace_root: "${WORKSPACE_ROOT}"
+  bucket_variable: "bucket"
