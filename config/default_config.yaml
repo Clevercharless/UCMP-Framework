@@ -1,0 +1,94 @@
+# UCMP baseline configuration
+project:
+  name: "Universal Cloud Migration Platform"
+  version: "1.0.0"
+
+source:
+  platform: "azure_databricks"
+  repo_path: "ucmp-demo/Loan-Platform"
+  workspace_url: "https://adb-simulated.azuredatabricks.net"
+  source_mode: "local_repo"
+  workspace_path: "/"
+
+target:
+  platform: "aws_databricks"
+  repo_path: "ucmp-demo/output/aws-migrated"
+  workspace_url: "https://simulated.cloud.databricks.com"
+  catalog_name: "main"
+
+pipeline:
+  fail_fast: true
+  dry_run: true
+
+rules:
+  rules_dir: "ucmp-demo/mappings"
+
+deployment:
+  # Safe default: analyze/validate only; do not write to Databricks.
+  auto_deploy: false
+
+output:
+  mode: "in_place"
+  reports_dir: "ucmp-demo/reports"
+  knowledge_model_dir: "ucmp-demo/reports/knowledge_model"
+
+logging:
+  level: "INFO"
+
+migration:
+  notebook_list:
+    - "/PFL/Delta-Lake/Qlik_Reporting/FinnOne_Receipts_Summary_Report/Report/Product_wise_summary"
+    - "/PFL/Delta-Lake/Qlik_Reporting/FinnOne_Receipts_Summary_Report/Write CSV/write_to_csv_account_classification_wise_summary"
+    - "/PFL/Delta-Lake/Qlik_Reporting/FinnOne_Receipts_Summary_Report/Write CSV/write_to_csv_dpdbucket_wise_summary"
+    - "/PFL/Delta-Lake/Qlik_Reporting/FinnOne_Receipts_Summary_Report/Write CSV/write_to_csv_finnone_receipts_summary"
+    - "/PFL/Delta-Lake/Qlik_Reporting/FinnOne_Receipts_Summary_Report/Write CSV/write_to_csv_product_wise_summary"
+
+  notebook_list_file: ""
+  notebook_path_column: "Notebook Path"
+
+  # Used for existing /workspace/... notebook references.
+  workspace_root: "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake"
+
+  # Used specifically for hardcoded referred-notebook/repository paths such as
+  # /Workspace/pfl-repo-dbx-datalake/<notebook>.
+  # The repository name is retained automatically; this value is the configurable root.
+  referred_notebook_path_root: "/Workspace/Users/charless.binny@poonawallafincorp.com"
+
+  bucket_variable: "bucket"
+
+  container_bucket_mapping:
+    appsflyer: "bkt-dl-raw-dev-appsflyer-aps1"
+    bedrock-agentcore: "bkt-dl-raw-dev-bedrock-agentcore-aps1"
+    cca: "bkt-dl-raw-dev-cca-aps1"
+    datacultr: "bkt-dl-raw-dev-datacultr-aps1"
+    digital-platform-utilities-mysql: "bkt-dl-raw-dev-digital-platform-utilities-mysql-aps1"
+    digital-platform-mongo: "bkt-dl-raw-dev-digital-platform-mongo-aps1"
+    digital-platform-mysql: "bkt-dl-raw-dev-digital-platform-mysql-aps1"
+    dista: "bkt-dl-raw-dev-dista-aps1"
+    dynamics-crm: "bkt-dl-raw-dev-dynamics-crm-aps1"
+    email-source: "bkt-dl-raw-dev-email-source-aps1"
+    finbox: "bkt-dl-raw-dev-finbox-aps1"
+    finmechanics: "bkt-dl-raw-dev-finmechanics-aps1"
+    finnone-replica: "bkt-dl-raw-dev-finnone-replica-aps1"
+    genesys: "bkt-dl-raw-dev-genesys-aps1"
+    lentra: "bkt-dl-raw-dev-lentra-aps1"
+    lentra-cd-lms: "bkt-dl-raw-dev-lentra-cd-lms-aps1"
+    lsq: "bkt-dl-raw-dev-lsq-aps1"
+    manual: "bkt-dl-raw-dev-manual-aps1"
+    mavis: "bkt-dl-raw-dev-lsq-mavis-aps1"
+    middleware: "bkt-dl-raw-dev-middleware-aps1"
+    netcore: "bkt-dl-raw-dev-netcore-aps1"
+    nugget: "bkt-dl-raw-dev-nugget-aps1"
+    oraclefusion-erp: "bkt-dl-raw-dev-oraclefusion-erp-aps1"
+    pennant: "bkt-dl-raw-dev-pennant-aps1"
+    posidex: "bkt-dl-raw-dev-posidex-aps1"
+    powerpay: "bkt-dl-raw-dev-powerpay-aps1"
+    qlikapps: "bkt-dl-raw-dev-tableau-apps-aps1"
+    rezolv: "bkt-dl-raw-dev-rezolv-aps1"
+    source-email-delivery: "bkt-dl-raw-dev-source-email-delivery-aps1"
+    stampdoc-push: "bkt-dl-raw-dev-stampdoc-push-aps1"
+    wbdocuments-mysql: "bkt-dl-raw-dev-wbdocuments-mysql-aps1"
+    webengage: "bkt-dl-raw-dev-webengage-aps1"
+    zinghr: "bkt-dl-raw-dev-zinghr-aps1"
+
+  container_bucket_mapping_file: ""

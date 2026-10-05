@@ -1,0 +1,37 @@
+source:
+  platform: azure_databricks
+  repo_path: /path/to/source-repository
+  source_mode: local_repo
+
+target:
+  platform: aws_databricks
+  # Ignored by ReplacementEngine when output.mode is in_place.
+  repo_path: /path/to/aws-output-repository
+
+migration:
+  # Put the exact notebooks to migrate here.
+  notebook_list:
+    - /Bronze/ingest_customer.py
+    - /Bronze/ingest_accounts.py
+    - /Silver/customer_transform.py
+
+  # Azure container -> AWS S3 bucket.
+  container_bucket_mapping:
+    qlikapps: raw_qlik
+    customer: raw_customer
+    finance: raw_finance
+
+  workspace_root: "${WORKSPACE_ROOT}"
+  bucket_variable: "bucket"
+
+pipeline:
+  fail_fast: true
+  dry_run: true
+
+rules:
+  rules_dir: ucmp-demo/mappings
+
+output:
+  mode: "in_place"
+  reports_dir: ucmp-demo/reports
+  knowledge_model_dir: ucmp-demo/reports/knowledge_model
