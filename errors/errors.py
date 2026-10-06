@@ -1,285 +1,975 @@
 """
-replacement.replacement_engine
-================================
-`ReplacementEngine` is the ninth pipeline stage. It executes the
-Transformation Plan (Module 8) against the staged notebook copies
-(Module 4), producing the migrated AWS Databricks repository under the configured output mode:
-`target.repo_path` for `separate` mode or `source.repo_path` for `in_place` mode.
+parser.parser_engine
+====================
 
-Per the spec: "Business logic must remain untouched. Only
-infrastructure-specific constructs should change." This is enforced
-structurally, not by trust: the engine only ever performs exact-substring
-`str.replace(original_value, resolved_value)` for operations whose
-`action` is `replace` or `remove` (which erases the substring). Every
-other operation type (`manual_review`, `no_change`, `unmatched`, and the
-`keep_business_logic` marker itself) carries no `original_value` to
-substitute, or is explicitly skipped -- so nothing outside a flagged
-construct's exact text is ever modified.
+ParserEngine is the fifth pipeline stage. It reads the repository
+inventory published by Module 4's RepositoryManager, runs every selected
+notebook through the full parser stack (Notebook Reader -> Magic Parser ->
+Regex Parser -> AST Parser -> SQL Parser -> Dependency Extractor), builds
+the repo-wide dependency graph, and generates the final
+MigrationKnowledgeModel.
+
+The migration.notebook_list is authoritative when provided.
 """
 
 from __future__ import annotations
 
-import shutil
+import json
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
-from common.exceptions import ReplacementError
+from common.exceptions import ParserError
 from common.logging_config import get_logger
 from orchestrator.context import PipelineContext
 from orchestrator.interfaces import PipelineStage
-from replacement.migration_banner import build_banner
+from parser.ast_parser import ASTParser
+from parser.dependency_extractor import DependencyExtractor, NotebookDependency
+from parser.dependency_graph import DependencyGraphBuilder
+from parser.knowledge_model import KnowledgeModelGenerator, NotebookParseResult
+from parser.magic_parser import MagicCommandParser
+from parser.migration_analyzer import MigrationAnalyzer
+from parser.notebook_reader import NotebookReader
+from parser.regex_parser import RegexParser
+from parser.sql_parser import SQLParser
+from repository.inventory import NotebookLanguage, NotebookFile
+
 
 logger = get_logger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_APPLICABLE_ACTIONS = {"replace", "remove"}
 
 
-class ReplacementEngine(PipelineStage):
-    """Applies the Transformation Plan's operations to staged notebooks, writing the migrated repo."""
+class ParserEngine(PipelineStage):
+    """
+    Parses selected notebooks from the synced repository
+    (from context.artifacts["repository"]) and produces a
+    MigrationKnowledgeModel.
+    """
 
-    name = "ReplacementEngine"
+    name = "ParserEngine"
+
+    def __init__(self):
+        self._reader = NotebookReader()
+        self._magic_parser = MagicCommandParser()
+        self._regex_parser = RegexParser()
+        self._ast_parser = ASTParser()
+        self._sql_parser = SQLParser()
+        self._knowledge_model_generator = KnowledgeModelGenerator()
 
     def run(self, context: PipelineContext) -> PipelineContext:
-        transformation_plan = context.get_artifact("transformation_plan")
         repository = context.get_artifact("repository")
 
-        if not transformation_plan:
-            raise ReplacementError(
-                "ReplacementEngine requires context.artifacts['transformation_plan'] "
-                "to be populated (run TransformationPlanner first)"
-            )
         if not repository:
-            raise ReplacementError(
-                "ReplacementEngine requires context.artifacts['repository'] "
-                "to be populated (run RepositoryManager first)"
+            raise ParserError(
+                "ParserEngine requires context.artifacts['repository'] to be "
+                "populated (run RepositoryManager first)"
             )
+
         if not context.config:
-            raise ReplacementError("ReplacementEngine requires context.config")
-
-        output_mode = str((context.config.get("output", {}) or {}).get("mode", "separate")).strip().lower()
-        source_mode = str((context.config.get("source", {}) or {}).get("source_mode", "local_repo")).strip().lower()
-        workspace_mode = output_mode == "in_place" and source_mode == "workspace"
-        # Workspace mode is analyzed/transformed into a process-local preview only.
-        # DeploymentEngine is the sole component allowed to write back to Databricks.
-        # This prevents auto_deploy=False from modifying the workspace.
-        if workspace_mode:
-            import tempfile
-            target_root = Path(tempfile.mkdtemp(prefix="ucmp_workspace_preview_"))
-            context.metadata.workspace_preview_root = str(target_root)
-        else:
-            target_root = self._resolve_target_root(context)
-
-        notebook_paths = {nb.relative_path: Path(nb.absolute_path) for nb in repository["notebooks"]}
-        notebook_languages = {nb.relative_path: nb.language for nb in repository["notebooks"]}
-
-        results: List[Dict] = []
-        for notebook_plan in transformation_plan["notebook_plans"]:
-            relative_path = notebook_plan["relative_path"]
-            source_path = notebook_paths.get(relative_path)
-            if source_path is None:
-                raise ReplacementError(
-                    f"Transformation plan references notebook '{relative_path}' which is "
-                    f"not present in the repository inventory"
-                )
-            language = notebook_languages.get(relative_path, "python")
-            result = self._apply_notebook_plan(
-                relative_path, source_path, language, notebook_plan, target_root,
-                workspace_client=None,
-                workspace_target_root=None,
+            raise ParserError(
+                "ParserEngine requires context.config to be populated"
             )
-            results.append(result)
 
-        config_assets_copied = 0 if workspace_mode else self._copy_config_assets(repository, target_root)
+        # ------------------------------------------------------------
+        # Repository inventory
+        # ------------------------------------------------------------
+        all_repository_entries = repository.notebooks
 
-        summary = self._summarize(
-            results,
-            config_assets_copied,
-            target_root or self._resolve_workspace_target_root(context),
+        known_paths = list(
+            repository.known_notebook_paths
+            or [
+                nb.relative_path
+                for nb in all_repository_entries
+            ]
         )
-        context.set_artifact("replacement_summary", summary)
-        context.metadata["replacement_complete"] = True
+
+        dependency_extractor = DependencyExtractor(
+            known_notebook_paths=known_paths
+        )
+
+        # ------------------------------------------------------------
+        # Migration scope
+        # ------------------------------------------------------------
+        selected_paths = self._load_migration_scope(
+            context,
+            known_paths,
+        )
+
+        normalized_selected = {
+            self._normalize_scope_path(path, context)
+            for path in selected_paths
+        }
+
+        # ------------------------------------------------------------
+        # Match requested notebooks against repository inventory.
+        #
+        # The normalization allows all of these forms to match:
+        #
+        # /PFL/Delta-Lake/foo/notebook
+        #
+        # /PFL/Delta-Lake/foo/notebook.py
+        #
+        # /Workspace/Users/user/repo/PFL/Delta-Lake/foo/notebook
+        #
+        # /Workspace/Users/user/repo/PFL/Delta-Lake/foo/notebook.py
+        # ------------------------------------------------------------
+        notebook_entries = [
+            nb
+            for nb in all_repository_entries
+            if self._normalize_scope_path(
+                nb.relative_path,
+                context,
+            ) in normalized_selected
+        ]
+
+        found_normalized = {
+            self._normalize_scope_path(
+                nb.relative_path,
+                context,
+            )
+            for nb in notebook_entries
+        }
+
+        missing_requested = [
+            requested
+            for requested in selected_paths
+            if self._normalize_scope_path(
+                requested,
+                context,
+            ) not in found_normalized
+        ]
+
+        # ------------------------------------------------------------
+        # Publish migration scope information.
+        # ------------------------------------------------------------
+        context.set_artifact(
+            "migration_scope",
+            {
+                "requested_notebooks": selected_paths,
+                "found_notebooks": [
+                    nb.relative_path
+                    for nb in notebook_entries
+                ],
+                "missing_notebooks": missing_requested,
+                "all_source_notebooks": known_paths,
+            },
+        )
+
+        if missing_requested:
+            logger.warning(
+                "%d requested notebook(s) were not found in "
+                "source repository: %s",
+                len(missing_requested),
+                missing_requested,
+            )
+
+        # ------------------------------------------------------------
+        # IMPORTANT:
+        # If an explicit migration list was supplied but absolutely
+        # nothing matched, stop the pipeline.
+        #
+        # This prevents the previous false-success scenario:
+        #
+        #   5 requested
+        #   0 parsed
+        #   0 transformed
+        #   DEPLOYED
+        # ------------------------------------------------------------
+        if selected_paths and not notebook_entries:
+            raise ParserError(
+                "Migration scope contains requested notebooks, but "
+                "ParserEngine could not match any requested notebook "
+                "againt the repositoryManager inventory. "
+                "Check workspace-root/path normalization."
+            )
+
+        # ------------------------------------------------------------
+        # Migration configuration
+        # ------------------------------------------------------------
+        migration_cfg = context.config.get("migration", {}) or {}
+
+        mapping = dict(
+            migration_cfg.get(
+                "container_bucket_mapping",
+                {},
+            )
+            or {}
+        )
+
+        mapping_file = migration_cfg.get(
+            "container_bucket_mapping_file"
+        )
+
+        # ------------------------------------------------------------
+        # Optional external container -> bucket mapping
+        # ------------------------------------------------------------
+        if mapping_file:
+            mapping_path = Path(mapping_file)
+
+            if not mapping_path.is_absolute():
+                mapping_path = _PROJECT_ROOT / mapping_path
+
+            if not mapping_path.exists():
+                raise ParserError(
+                    f"Container-to-bucket mapping file does not exist: "
+                    f"{mapping_path}"
+                )
+
+            try:
+                # --------------------------------------------
+                # YAML
+                # --------------------------------------------
+                if mapping_path.suffix.lower() in {
+                    ".yaml",
+                    ".yml",
+                }:
+                    import yaml
+
+                    loaded = yaml.safe_load(
+                        mapping_path.read_text(
+                            encoding="utf-8"
+                        )
+                    ) or {}
+
+                    if not isinstance(loaded, dict):
+                        raise ParserError(
+                            "Container-to-bucket YAML mapping "
+                            "must be a mapping"
+                        )
+
+                    mapping.update(loaded)
+
+                # --------------------------------------------
+                # CSV / TXT
+                # --------------------------------------------
+                elif mapping_path.suffix.lower() in {
+                    ".csv",
+                    ".txt",
+                }:
+                    import csv
+
+                    with mapping_path.open(
+                        "r",
+                        encoding="utf-8-sig",
+                        newline="",
+                    ) as fh:
+                        for row in csv.reader(fh):
+                            if (
+                                len(row) >= 2
+                                and row[0].strip().lower()
+                                not in {
+                                    "container",
+                                    "azure container",
+                                }
+                            ):
+                                mapping[
+                                    row[0].strip()
+                                ] = row[1].strip()
+
+                # --------------------------------------------
+                # Excel
+                # --------------------------------------------
+                elif mapping_path.suffix.lower() in {
+                    ".xlsx",
+                    ".xlsm",
+                }:
+                    from openpyxl import load_workbook
+
+                    wb = load_workbook(
+                        mapping_path,
+                        read_only=True,
+                        data_only=True,
+                    )
+
+                    rows = list(
+                        wb.active.iter_rows(
+                            values_only=True
+                        )
+                    )
+
+                    for row in rows[1:]:
+                        if (
+                            len(row) >= 2
+                            and row[0]
+                            and row[1]
+                        ):
+                            mapping[
+                                str(row[0]).strip()
+                            ] = str(row[1]).strip()
+
+                else:
+                    raise ParserError(
+                        "Unsupported mapping file format: "
+                        f"{mapping_path.suffix}"
+                    )
+
+            except ImportError as exc:
+                raise ParserError(
+                    "Required dependency is missing to read "
+                    f"mapping file {mapping_path}"
+                ) from exc
+
+        # ------------------------------------------------------------
+        # Migration analyzer
+        # ------------------------------------------------------------
+        analyzer = MigrationAnalyzer(
+            container_bucket_mapping=mapping,
+            workspace_root=migration_cfg.get(
+                "workspace_root",
+                "${WORKSPACE_ROOT}",
+            ),
+            referred_notebook_path_root=migration_cfg.get(
+                "referred_notebook_path_root",
+                "${TARGET_WORKSPACE_ROOT}",
+            ),
+            source_repo_path=(
+                context.config.get("source", {})
+                or {}
+            ).get(
+                "repo_path",
+                "",
+            ),
+            bucket_variable=migration_cfg.get(
+                "bucket_variable",
+                "bucket",
+            ),
+        )
+
+        # ------------------------------------------------------------
+        # Parse notebooks
+        # ------------------------------------------------------------
+        notebook_results: List[NotebookParseResult] = []
+        all_dependencies: List[NotebookDependency] = []
+        migration_analyses = []
+
+        for entry in notebook_entries:
+            result, deps = self._parse_one_notebook(
+                entry,
+                dependency_extractor,
+                analyzer,
+            )
+
+            notebook_results.append(result)
+            all_dependencies.extend(deps)
+
+            migration_analyses.append(
+                result.migration_analysis.to_dict()
+                if result.migration_analysis
+                else {
+                    "notebook": result.relative_path,
+                    "edits": [],
+                }
+            )
+
+        # ------------------------------------------------------------
+        # Safety check:
+        # explicit migration list + zero parsed notebooks
+        # ------------------------------------------------------------
+        if selected_paths and not notebook_results:
+            raise ParserError(
+                "Migration scope contains requested notebooks, but "
+                "ParserEngine parsed zero notebooks. "
+            )
+
+        # ------------------------------------------------------------
+        # Determine whether dependencies themselves are part of the
+        # explicit migration list.
+        # ------------------------------------------------------------
+        selected_set = {
+            self._normalize_scope_path(
+                path,
+                context,
+            )
+            for path in selected_paths
+        }
+
+        for dependency in all_dependencies:
+            dependency.target_in_migration_list = (
+                self._normalize_scope_path(
+                    dependency.resolved_target,
+                    context,
+                )
+                in selected_set
+                if dependency.resolved_target
+                else False
+            )
+
+        # ------------------------------------------------------------
+        # Dependency graph
+        # ------------------------------------------------------------
+        graph_builder = DependencyGraphBuilder()
+
+        graph = graph_builder.build(
+            known_paths,
+            all_dependencies,
+        )
+
+        graph_summary = graph_builder.summarize(
+            graph,
+            all_dependencies,
+        )
+
+        # ------------------------------------------------------------
+        # Knowledge model
+        # ------------------------------------------------------------
+        model = self._knowledge_model_generator.generate(
+            repo_name=repository.repo_name,
+            notebook_results=notebook_results,
+            dependencies=all_dependencies,
+            graph_summary=graph_summary,
+        )
+
+        model.migration_scope = context.get_artifact(
+            "migration_scope",
+            {},
+        )
+
+        # ------------------------------------------------------------
+        # Write knowledge model
+        # ------------------------------------------------------------
+        output_path = self._write_knowledge_model(
+            context,
+            model.to_dict(),
+        )
+
+        # ------------------------------------------------------------
+        # Publish artifacts
+        # ------------------------------------------------------------
+        context.set_artifact(
+            "knowledge_model",
+            model.to_dict(),
+        )
+
+        context.set_artifact(
+            "dependency_graph_summary",
+            graph_summary.to_dict(),
+        )
+
+        context.set_artifact(
+            "dependency_graph_dot",
+            graph_builder.to_dot(graph),
+        )
+
+        context.set_artifact(
+            "migration_analyses",
+            migration_analyses,
+        )
+
+        context.set_artifact(
+            "parsed_notebook_count",
+            len(notebook_results),
+        )
+
+        context.metadata["parser_complete"] = True
+        context.metadata["knowledge_model_path"] = str(
+            output_path
+        )
 
         logger.info(
-            "Replacement Engine wrote %d notebook(s) (%d operation(s) applied, "
-            "%d notebook(s) flagged for review) + %d config asset(s) to %s",
-            summary["notebooks_written"],
-            summary["total_operations_applied"],
-            summary["notebooks_with_manual_review"],
-            summary["config_assets_copied"],
-            target_root,
+            "Parsed %d notebook(s); %d dependency edge(s), "
+            "%d azure construct(s), %d manual review item(s). "
+            "Knowledge model written to %s",
+            len(notebook_results),
+            len(model.dependencies["edges"]),
+            len(model.azure_constructs),
+            len(model.manual_review_items),
+            output_path,
         )
+
         return context
 
-    # -- internals --------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Migration scope
+    # ------------------------------------------------------------------
 
-    def _resolve_target_root(self, context: PipelineContext) -> Path:
-        output_cfg = context.config.get("output", {}) or {}
-        mode = str(output_cfg.get("mode", "separate")).strip().lower()
+    @staticmethod
+    def _load_migration_scope(
+        context: PipelineContext,
+        known_paths: List[str],
+    ) -> List[str]:
 
-        if mode == "in_place":
-            source_cfg = context.config.get("source", {}) or {}
-            configured = source_cfg.get("repo_path")
-        else:
-            configured = context.config["target"]["repo_path"]
+        migration_cfg = (
+            context.config.get("migration", {})
+            or {}
+        )
 
-        if not configured:
-            raise ReplacementError(
-                f"No repository path configured for output mode '{mode}'."
+        # ------------------------------------------------------------
+        # Preferred input: explicit inline list.
+        #
+        # The list is authoritative.
+        # Notebooks discovered as dependencies are NOT automatically
+        # added to the migration scope.
+        # ------------------------------------------------------------
+        inline_list = migration_cfg.get(
+            "notebook_list"
+        ) or []
+
+        if inline_list:
+            if not isinstance(
+                inline_list,
+                (list, tuple),
+            ):
+                raise ParserError(
+                    "migration.notebook_list must be a list"
+                )
+
+            return list(
+                dict.fromkeys(
+                    str(v).strip()
+                    for v in inline_list
+                    if str(v).strip()
+                )
             )
 
-        path = Path(str(configured))
+        # ------------------------------------------------------------
+        # Backward-compatible file input.
+        # ------------------------------------------------------------
+        list_file = migration_cfg.get(
+            "notebook_list_file"
+        )
+
+        if not list_file:
+            return list(known_paths)
+
+        path = Path(list_file)
+
         if not path.is_absolute():
             path = _PROJECT_ROOT / path
-        return path.resolve()
 
-    def _apply_notebook_plan(
-        self,
-        relative_path: str,
-        source_path: Path,
-        language: str,
-        notebook_plan: Dict,
-        target_root: Path | None,
-        workspace_client=None,
-        workspace_target_root: str | None = None,
-    ) -> Dict:
-        try:
-            text = source_path.read_text(encoding="utf-8", errors="ignore")
-        except OSError as exc:
-            raise ReplacementError(f"Could not read staged notebook {source_path}: {exc}") from exc
-
-        transformed_text, applied_count = self._apply_operations(text, notebook_plan["operations"])
-        transformed_text, config_added = self._apply_target_config_additions(transformed_text, notebook_plan["operations"], language)
-        applied_count += config_added
-
-        manual_review_ops = [
-            op for op in notebook_plan["operations"]
-            if op["requires_manual_review"] and op["operation_type"] != "keep_business_logic"
-        ]
-        if applied_count > 0 or manual_review_ops:
-            transformed_text = self._insert_banner(
-                transformed_text, language, applied_count, manual_review_ops
+        if not path.exists():
+            raise ParserError(
+                "Migration notebook list file does not exist: "
+                f"{path}"
             )
 
-        if workspace_client is not None:
-            workspace_path = self._workspace_notebook_path(workspace_target_root, relative_path)
-            workspace_client.import_source(workspace_path, transformed_text, overwrite=True)
-            output_path_value = workspace_path
+        suffix = path.suffix.lower()
+        values = []
+
+        # ------------------------------------------------------------
+        # CSV / TXT
+        # ------------------------------------------------------------
+        if suffix in {
+            ".csv",
+            ".txt",
+        }:
+            import csv
+
+            with path.open(
+                "r",
+                encoding="utf-8-sig",
+                newline="",
+            ) as fh:
+
+                rows = csv.reader(fh)
+
+                column = str(
+                    migration_cfg.get(
+                        "notebook_path_column",
+                        "Notebook Path",
+                    )
+                )
+
+                for row in rows:
+                    if not row:
+                        continue
+
+                    if not row[0].strip():
+                        continue
+
+                    value = row[0].strip()
+
+                    if value == column:
+                        continue
+
+                    values.append(value)
+
+        # ------------------------------------------------------------
+        # XLSX / XLSM
+        # ------------------------------------------------------------
+        elif suffix in {
+            ".xlsx",
+            ".xlsm",
+        }:
+            try:
+                from openpyxl import load_workbook
+            except ImportError as exc:
+                raise ParserError(
+                    "openpyxl is required to read an Excel "
+                    "migration notebook list"
+                ) from exc
+
+            wb = load_workbook(
+                path,
+                read_only=True,
+                data_only=True,
+            )
+
+            ws = wb.active
+
+            rows = list(
+                ws.iter_rows(
+                    values_only=True
+                )
+            )
+
+            column = str(
+                migration_cfg.get(
+                    "notebook_path_column",
+                    "Notebook Path",
+                )
+            )
+
+            header = [
+                str(v).strip()
+                if v is not None
+                else ""
+                for v in (
+                    rows[0]
+                    if rows
+                    else []
+                )
+            ]
+
+            try:
+                idx = header.index(column)
+            except ValueError:
+                idx = 0
+
+            values = [
+                str(row[idx]).strip()
+                for row in rows[1:]
+                if (
+                    len(row) > idx
+                    and row[idx]
+                )
+            ]
+
         else:
-            if target_root is None:
-                raise ReplacementError("A local target root is required for non-workspace output")
-            output_path = target_root / relative_path
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(transformed_text, encoding="utf-8")
-            output_path_value = str(output_path)
+            raise ParserError(
+                "Unsupported migration notebook list "
+                f"format: {suffix}. "
+                "Use CSV, TXT, XLSX or XLSM."
+            )
 
-        return {
-            "relative_path": relative_path,
-            "output_path": output_path_value,
-            "operations_applied": applied_count,
-            "manual_review_count": len(manual_review_ops),
-        }
+        return list(
+            dict.fromkeys(values)
+        )
 
-    @staticmethod
-    def _apply_operations(text: str, operations: List[Dict]) -> Tuple[str, int]:
-        applied_count = 0
-        for op in operations:
-            if op["action"] not in _APPLICABLE_ACTIONS:
-                continue  # manual_review / no_change / unmatched / keep -> leave untouched
-            original_value = op.get("original_value")
-            if not original_value or original_value not in text:
-                continue
-
-            replacement = op.get("resolved_value") or ""  # "remove" -> resolved_value is None
-            text = text.replace(original_value, replacement)
-            applied_count += 1
-        return text, applied_count
+    # ------------------------------------------------------------------
+    # Path normalization
+    # ------------------------------------------------------------------
 
     @staticmethod
-    def _apply_target_config_additions(text: str, operations: List[Dict], language: str) -> Tuple[str, int]:
-        additions = [op.get("resolved_value") for op in operations if op.get("action") == "add_config" and op.get("resolved_value")]
-        if not additions:
-            return text, 0
-        unique = []
-        for value in additions:
-            if value not in unique and value not in text:
-                unique.append(value)
-        if not unique:
-            return text, 0
-        lines = text.splitlines()
-        if not lines:
-            return text, 0
-        insert_index = 1 if lines[0].startswith(("# Databricks notebook source", "-- Databricks notebook source", "// Databricks notebook source")) else 0
-        lines[insert_index:insert_index] = unique + [""]
-        return "\n".join(lines), len(unique)
+    def _normalize_scope_path(
+        path: str,
+        context: PipelineContext,
+    ) -> str:
+        """
+        Normalize notebook paths so the following forms are treated
+        as the same notebook:
 
-    @staticmethod
-    def _insert_banner(text: str, language: str, applied_count: int, manual_review_ops: List[Dict]) -> str:
-        lines = text.splitlines()
-        if not lines:
-            return text
-        header, rest = lines[0], "\n".join(lines[1:])
-        banner = build_banner(language, applied_count, manual_review_ops)
-        return f"{header}\n\n{banner}\n{rest}"
+            /PFL/Delta-Lake/Common/utils
 
-    def _build_workspace_client(self, context: PipelineContext):
-        from repository.databricks_workspace import DatabricksWorkspaceClient
-        target_cfg = context.config.get("target", {}) or {}
-        source_cfg = context.config.get("source", {}) or {}
-        target_url = str(target_cfg.get("workspace_url", "") or "").strip()
-        source_url = str(source_cfg.get("workspace_url", "") or "").strip()
-        # If target URL is left at the framework's simulated default, use the
-        # actual source/current workspace URL. This is useful when UCMP runs in
-        # the same Databricks workspace it is migrating into.
-        if not target_url or "simulated.cloud.databricks.com" in target_url:
-            target_url = source_url
-        return DatabricksWorkspaceClient(target_url or None)
+            /PFL/Delta-Lake/Common/utils.py
 
-    @staticmethod
-    def _resolve_workspace_target_root(context: PipelineContext) -> str:
-        target_cfg = context.config.get("target", {}) or {}
-        configured = str(target_cfg.get("repo_path", "") or "").strip()
-        if not configured:
-            source_cfg = context.config.get("source", {}) or {}
-            configured = str(source_cfg.get("repo_path", "") or "").strip()
-        if not configured:
-            raise ReplacementError("A target workspace repo_path is required for workspace in-place migration")
-        return configured.rstrip("/") or "/"
+            /Workspace/Users/user/repo/PFL/Delta-Lake/Common/utils
 
-    @staticmethod
-    def _workspace_notebook_path(target_root: str, relative_path: str) -> str:
-        # Workspace API notebook paths conventionally omit the local export
-        # extension. The staged inventory uses .py/.sql/.scala so parser and
-        # replacement logic can operate on normal source files.
-        rel = str(relative_path).replace("\\", "/").lstrip("/")
-        suffix = Path(rel).suffix.lower()
-        if suffix in {".py", ".sql", ".scala"}:
-            rel = rel[:-len(suffix)]
-        return f"{target_root.rstrip('/')}/{rel}"
+            /Workspace/Users/user/repo/PFL/Delta-Lake/Common/utils.py
 
-    def _copy_config_assets(self, repository: Dict, target_root: Path) -> int:
-        count = 0
-        for asset in repository.get("config_assets", []):
-            source_path = Path(asset["absolute_path"])
-            output_path = target_root / asset["relative_path"]
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            # In-place mode points target_root at the source repository. The
-            # config asset is already in the correct location, so do not copy
-            # a file onto itself.
-            if source_path.resolve() == output_path.resolve():
-                count += 1
-                continue
-            shutil.copy2(source_path, output_path)
-            count += 1
-        return count
+        The returned value is:
 
-    @staticmethod
-    def _summarize(results: List[Dict], config_assets_copied: int, target_root: Path) -> Dict:
-        return {
-            "target_repo_path": str(target_root),
-            "notebooks_written": len(results),
-            "total_operations_applied": sum(r["operations_applied"] for r in results),
-            "notebooks_with_manual_review": sum(1 for r in results if r["manual_review_count"] > 0),
-            "config_assets_copied": config_assets_copied,
-            "notebook_results": results,
-        }
+            repository-relative
+            lowercase
+            extensionless
+        """
+
+        value = str(
+            path or ""
+        ).strip().replace(
+            "\\",
+            "/",
+        )
+
+        source = (
+            context.config.get("source", {})
+            if context.config
+            else {}
+        )
+
+        # Prefer workspace_path, then repo_path.
+        root = str(
+            source.get("workspace_path")
+            or source.get("repo_path")
+            or "/"
+        ).strip().replace(
+            "\\",
+            "/",
+        )
+
+        root = root.rstrip("/")
+
+        # Always work with a leading slash internally.
+        value = "/" + value.strip("/")
+
+        root_normalized = (
+            "/" + root.strip("/")
+            if root.strip("/")
+            else ""
+        )
+
+        # ------------------------------------------------------------
+        # Remove configured workspace root.
+        #
+        # Example:
+        #
+        # /Workspace/Users/user/repo/PFL/foo
+        #
+        # becomes:
+        #
+        # /PFL/foo
+        # ------------------------------------------------------------
+        if root_normalized:
+            root_lower = root_normalized.lower()
+            value_lower = value.lower()
+
+            if value_lower == root_lower:
+                value = "/"
+
+            elif value_lower.startswith(
+                root_lower + "/"
+            ):
+                value = value[
+                    len(root_normalized):
+                ]
+
+        # ------------------------------------------------------------
+        # Normalize again after root removal.
+        # ------------------------------------------------------------
+        value = "/" + value.strip("/")
+
+        # ------------------------------------------------------------
+        # Remove local source extensions.
+        #
+        # Databricks workspace paths are normally extensionless,
+        # while exported source files contain .py/.sql/.scala.
+        # ------------------------------------------------------------
+        lower_value = value.lower()
+
+        for extension in (
+            ".py",
+            ".sql",
+            ".scala",
+        ):
+            if lower_value.endswith(extension):
+                value = value[
+                    :-len(extension)
+                ]
+                break
+
+        # ------------------------------------------------------------
+        # Final canonical representation.
+        # ------------------------------------------------------------
+        return value.strip("/").lower()
+
+    # ------------------------------------------------------------------
+    # Notebook parser
+    # ------------------------------------------------------------------
+
+    def _parse_one_notebook(
+        self,
+        entry: NotebookFile,
+        dependency_extractor: DependencyExtractor,
+        analyzer: MigrationAnalyzer,
+    ):
+        relative_path = entry.relative_path
+        absolute_path = Path(
+            entry.absolute_path
+        )
+        category = entry.category
+
+        # ------------------------------------------------------------
+        # Read notebook
+        # ------------------------------------------------------------
+        try:
+            notebook_source = self._reader.read(
+                relative_path,
+                str(absolute_path),
+            )
+
+        except ParserError as exc:
+            logger.warning(
+                "Notebook '%s' could not be read: %s",
+                relative_path,
+                exc,
+            )
+
+            result = NotebookParseResult(
+                relative_path=relative_path,
+                category=category,
+                language=entry.language.unknown,
+                cell_count=0,
+                parse_error=str(exc),
+            )
+
+            return result, []
+
+        # ------------------------------------------------------------
+        # Magic commands
+        # ------------------------------------------------------------
+        magic_commands = self._magic_parser.parse(
+            notebook_source
+        )
+
+        # ------------------------------------------------------------
+        # Azure / cloud construct detection
+        # ------------------------------------------------------------
+        azure_constructs = self._regex_parser.parse(
+            notebook_source.full_text
+        )
+
+        # ------------------------------------------------------------
+        # Migration analysis
+        # ------------------------------------------------------------
+        migration_analysis = analyzer.analyze(
+            relative_path,
+            notebook_source.full_text,
+        )
+
+        # ------------------------------------------------------------
+        # AST parsing for Python
+        # ------------------------------------------------------------
+        ast_findings = None
+        parse_error = None
+
+        if (
+            notebook_source.language
+            == NotebookLanguage.PYTHON
+        ):
+            try:
+                ast_findings = self._ast_parser.parse(
+                    notebook_source.full_text,
+                    relative_path,
+                )
+
+            except ParserError as exc:
+                parse_error = str(exc)
+
+                logger.warning(
+                    "AST parse failed for '%s': %s",
+                    relative_path,
+                    exc,
+                )
+
+        # ------------------------------------------------------------
+        # SQL parsing
+        # ------------------------------------------------------------
+        sql_findings = self._extract_sql_findings(
+            notebook_source,
+            magic_commands,
+        )
+
+        # ------------------------------------------------------------
+        # Build parse result
+        # ------------------------------------------------------------
+        result = NotebookParseResult(
+            relative_path=relative_path,
+            category=category,
+            language=notebook_source.language.value,
+            cell_count=notebook_source.cell_count,
+            magic_commands=magic_commands,
+            azure_constructs=azure_constructs,
+            ast_findings=ast_findings,
+            sql_findings=sql_findings,
+            parse_error=parse_error,
+            migration_analysis=migration_analysis,
+        )
+
+        # ------------------------------------------------------------
+        # Dependency extraction
+        # ------------------------------------------------------------
+        dependencies = dependency_extractor.extract(
+            relative_path,
+            magic_commands,
+            ast_findings,
+        )
+
+        return result, dependencies
+
+    # ------------------------------------------------------------------
+    # SQL findings
+    # ------------------------------------------------------------------
+
+    def _extract_sql_findings(
+        self,
+        notebook_source,
+        magic_commands,
+    ):
+        sql_text_parts: List[str] = []
+
+        if (
+            notebook_source.language
+            == NotebookLanguage.SQL
+        ):
+            sql_text_parts.append(
+                notebook_source.full_text
+            )
+
+        sql_text_parts.extend(
+            m.argument
+            for m in magic_commands
+            if m.magic_type == "sql"
+        )
+
+        if not sql_text_parts:
+            return None
+
+        return self._sql_parser.parse(
+            "\n".join(sql_text_parts)
+        )
+
+    # ------------------------------------------------------------------
+    # Knowledge model output
+    # ------------------------------------------------------------------
+
+    def _write_knowledge_model(
+        self,
+        context: PipelineContext,
+        model_dict: Dict,
+    ) -> Path:
+
+        output_dir_config = context.config[
+            "output"
+        ][
+            "knowledge_model_dir"
+        ]
+
+        output_dir = Path(
+            output_dir_config
+        )
+
+        if not output_dir.is_absolute():
+            output_dir = (
+                _PROJECT_ROOT
+                / output_dir
+            )
+
+        output_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        output_path = (
+            output_dir
+            / "MigrationKnowledgeModel.json"
+        )
+
+        output_path.write_text(
+            json.dumps(
+                model_dict,
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+
+        return output_path
