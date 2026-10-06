@@ -41,13 +41,16 @@ from repository.databricks_workspace import (
     DatabricksWorkspaceClient,
     WorkspaceObject,
 )
-from repository.inventory import NotebookMetadata, RepositoryInventory
+from repository.inventory import NotebookFile, RepositoryInventory
+from orchestrator.context import PipelineContext
+from orchestrator.interfaces import PipelineStage
+import hashlib
 
 
 logger = get_logger(__name__)
 
 
-class RepositoryManager:
+class RepositoryManager(PipelineStage):
     """
     Prepare the repository/workspace for migration.
 
@@ -70,6 +73,8 @@ class RepositoryManager:
     dependency analysis can determine whether referenced notebooks
     exist and whether they were selected for migration.
     """
+
+    name = "RepositoryManager"
 
     NOTEBOOK_EXTENSIONS = {
         ".py",
@@ -94,7 +99,7 @@ class RepositoryManager:
 
     def __init__(
         self,
-        config: UCMPConfig,
+        config: Optional[UCMPConfig] = None,
         context=None,
     ):
         self.config = config
@@ -116,15 +121,26 @@ class RepositoryManager:
     # Public API
     # =================================================================
 
-    def run(self) -> RepositoryInventory:
+    def run(self, context: PipelineContext) -> PipelineContext:
         """
         Execute repository preparation.
 
         Returns
         -------
-        RepositoryInventory
+        PipelineContext
             Inventory consumed by ParserEngine and subsequent stages.
         """
+
+        self.context = context
+        
+        if self.config is None :
+            self.config = context.get_artifact("resolved_config")
+
+        if self.config is None:
+            raise RuntimeError(
+                "RepositoryManager requires a loaded UCMPConfig, "
+                "but no configuration was provided by the pipeline context."
+                )
 
         source = self.config.source
 
@@ -138,9 +154,13 @@ class RepositoryManager:
         ).strip().lower()
 
         if source_mode == "workspace":
-            return self._run_workspace_mode()
+            inventory = self._run_workspace_mode()
+        else:
+            inventory = self._run_local_repository_mode()
 
-        return self._run_local_repository_mode()
+        context.set_artifact("repository", inventory)
+
+        return context
 
     # =================================================================
     # Workspace mode
@@ -442,7 +462,7 @@ class RepositoryManager:
 
         value = "/" + value.strip("/")
 
-        return value.lower()
+        return value
 
     @classmethod
     def _workspace_path_without_extension(
@@ -1001,7 +1021,7 @@ class RepositoryManager:
         selected_objects: Sequence[WorkspaceObject],
         export_root: str,
         workspace_root: str,
-    ) -> List[NotebookMetadata]:
+    ) -> List[NotebookFile]:
         """
         Export only selected workspace notebooks.
 
@@ -1015,7 +1035,7 @@ class RepositoryManager:
                 "Databricks workspace client is not initialized."
             )
 
-        notebooks: List[NotebookMetadata] = []
+        notebooks: List[NotebookFile] = []
 
         for workspace_object in selected_objects:
 
@@ -1068,16 +1088,21 @@ class RepositoryManager:
                     f"'{destination}': {exc}"
                 ) from exc
 
-            metadata = NotebookMetadata(
+            metadata = NotebookFile(
                 relative_path=local_relative_path,
                 absolute_path=str(destination),
+                category=str(Path(workspace_object.path).parent),
                 language=(
                     workspace_object.language
                     or self._infer_language_from_path(
                         workspace_object.path
                     )
                 ),
-                size=len(source_text.encode("utf-8")),
+                size_bytes=len(source_text.encode("utf-8")),
+                line_count=len(source_text.splitlines()),
+                sha256=hashlib.sha256(
+                    source_text.encode("utf-8")
+                ).hexdigest(),
             )
 
             notebooks.append(metadata)
@@ -1292,7 +1317,7 @@ class RepositoryManager:
         Build an inventory from an existing local repository.
         """
 
-        notebooks: List[NotebookMetadata] = []
+        notebooks: List[NotebookFile] = []
 
         for file_path in source_path.rglob("*"):
 
@@ -1322,7 +1347,7 @@ class RepositoryManager:
                 size = None
 
             notebooks.append(
-                NotebookMetadata(
+                NotebookFile(
                     relative_path=relative_path,
                     absolute_path=str(file_path),
                     language=self._infer_language_from_path(
