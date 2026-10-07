@@ -1,975 +1,406 @@
-"""
-parser.parser_engine
-====================
+# Databricks notebook source
+# MAGIC %md
+# MAGIC - Name: FinnOne_DimCollateralProperty
+# MAGIC - SCD Type:  1
+# MAGIC - Author:  Kapil Patil
+# MAGIC - Description:  Creating Dimension table for Collateral Property
 
-ParserEngine is the fifth pipeline stage. It reads the repository
-inventory published by Module 4's RepositoryManager, runs every selected
-notebook through the full parser stack (Notebook Reader -> Magic Parser ->
-Regex Parser -> AST Parser -> SQL Parser -> Dependency Extractor), builds
-the repo-wide dependency graph, and generates the final
-MigrationKnowledgeModel.
+# COMMAND ----------
 
-The migration.notebook_list is authoritative when provided.
-"""
+# MAGIC %md 
+# MAGIC ## Import Libraries
 
-from __future__ import annotations
+# COMMAND ----------
 
+import os
 import json
-from pathlib import Path
-from typing import Dict, List
+import datetime
+from pytz import timezone
+import random
+import time
 
-from common.exceptions import ParserError
-from common.logging_config import get_logger
-from orchestrator.context import PipelineContext
-from orchestrator.interfaces import PipelineStage
-from parser.ast_parser import ASTParser
-from parser.dependency_extractor import DependencyExtractor, NotebookDependency
-from parser.dependency_graph import DependencyGraphBuilder
-from parser.knowledge_model import KnowledgeModelGenerator, NotebookParseResult
-from parser.magic_parser import MagicCommandParser
-from parser.migration_analyzer import MigrationAnalyzer
-from parser.notebook_reader import NotebookReader
-from parser.regex_parser import RegexParser
-from parser.sql_parser import SQLParser
-from repository.inventory import NotebookLanguage, NotebookFile
+# COMMAND ----------
 
+# MAGIC %md
+# MAGIC ###Code Execution Start time
 
-logger = get_logger(__name__)
+# COMMAND ----------
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+#get startTime of the notebook
+timezone = timezone('Asia/Kolkata')
+startTime = datetime.datetime.now(tz=timezone)
+print("Start Time --> ",startTime)
 
+# COMMAND ----------
 
-class ParserEngine(PipelineStage):
-    """
-    Parses selected notebooks from the synced repository
-    (from context.artifacts["repository"]) and produces a
-    MigrationKnowledgeModel.
-    """
+# MAGIC %md
+# MAGIC ## Declare Variables
 
-    name = "ParserEngine"
+# COMMAND ----------
 
-    def __init__(self):
-        self._reader = NotebookReader()
-        self._magic_parser = MagicCommandParser()
-        self._regex_parser = RegexParser()
-        self._ast_parser = ASTParser()
-        self._sql_parser = SQLParser()
-        self._knowledge_model_generator = KnowledgeModelGenerator()
+silver_catalog_name = os.getenv("silver_catalog_name")
+gold_catalog_name = os.getenv("gold_catalog_name")
+admin_catalog_name = os.getenv("admin_catalog_name")
+view_catalog_name = os.getenv("view_catalog_name")
 
-    def run(self, context: PipelineContext) -> PipelineContext:
-        repository = context.get_artifact("repository")
+error = "No Error"
+config_id = dbutils.widgets.get('config_id')
+business_date = dbutils.widgets.get('business_date')
+raw_sa_name = dbutils.widgets.get('raw_sa_name')
+dim_start_date = datetime.datetime.strptime(dbutils.widgets.get('Last_Sink_Date'),"%m/%d/%Y %I:%M:%S %p")
+trigger_time = datetime.datetime.strptime(dbutils.widgets.get("trigger_time")[:-2],"%Y-%m-%dT%H:%M:%S.%f")
+src_system_id = spark.sql(f"""SELECT ID FROM {gold_catalog_name}.pfldw.dim_source_systems 
+                                  WHERE System_Name = 'FinnOneReplica' and is_Active = 1""").collect()[0][0]
 
-        if not repository:
-            raise ParserError(
-                "ParserEngine requires context.artifacts['repository'] to be "
-                "populated (run RepositoryManager first)"
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### UPDATE INPROGRESS STATUS DIMENSION EXECUTION
+
+# COMMAND ----------
+
+# while True:
+#     try:
+#         spark.sql(f"""
+#                 UPDATE {admin_catalog_name}.config.tb_dwh_config
+#                 SET Status = 'In-Progress'
+#                 WHERE Config_ID = {config_id}
+#                 """).display()
+#         break
+#     except Exception as e:
+#         print(e)
+#         if "MetadataChangedException" in str(type(e)) or "ConcurrentAppendException" in str(type(e)) :
+#             sleep_duration = random.uniform(1,5)
+#             time.sleep(sleep_duration)
+#         else:
+#             error = e
+#             print(error)
+#             break
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ####SCD1 COLUMNS DEFINITION ![](path)
+
+# COMMAND ----------
+
+if error == "No Error":
+    try:
+        # Scd1 columns
+        SCD1_COL = ['Collateral_ID']
+        hkc_scd1_fin_cols = ''
+        for x in SCD1_COL:
+            hkc_scd1_fin_cols += "coalesce(trim(" + x + "),''),"
+        hkc_scd1_fin_cols = "concat("+ hkc_scd1_fin_cols[:-1]+")"
+    except Exception as e:
+        error = str(e)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ###CREATE DIMENSION TABLE
+
+# COMMAND ----------
+
+if error == "No Error":
+    try: 
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {gold_catalog_name}.pfldw.DimCollateralProperty (
+            Collateral_Property_Key BigInt GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1),
+            Collateral_Key BigInt,
+            Collateral_ID  STRING,
+            Property_Application_Type String,
+            Coll_SubType_Property_Details String,
+            Type_of_Purchase String,
+            Property_Type String,
+            Nature_of_Property String,
+            Contractor String,
+            Architect String,
+            Cost_of_Construction decimal(25,7),
+            Cost_of_Land decimal(25,7),
+            Property_Classification String,
+            Property_Ownership String,
+            Market_Value decimal(25,7),
+            Carpert_Area decimal(10,2),
+            Carpet_Area_Unit String,
+            Build_up_Area decimal(10,2),
+            Build_Up_Area_Unit String,
+            Property_Purpose String,
+            Age_of_Property_In_Years decimal(10,2),
+            Residual_Age_of_Property String,
+            Property_Cost decimal(25,7),
+            Agreement_Value decimal(25,7),
+            Full_Address String,
+            Property_Address_1 String,
+            Property_Address_2 String,
+            Property_Address_3 String,
+            Property_City String,
+            Property_State String,
+            Property_Pincode String,
+            Property_Country String,
+            Builder_Constructed String,
+            Builder_Company_Name String,
+            Tier_of_Builder String,
+            Builder_Project_Code String,
+            Project_Name String,
+            APF_Flag String,
+            ADF_Flag String,
+            Building_Name String,
+            Wing_Name String,
+            Builder_Flat_Shop_No String,
+            Floor_No String,
+            Building_Completion String,
+            Seller_Name String,
+            Present_Registered_Owner String,
+            TCT_CCT_No String,
+            LOT_No String,
+            Percentage_Share String,
+            Current_Usage String,
+            Other_Remarks String,
+            Registration_No String,
+            Agreement_Type String,
+            SRO String,
+            Sale_Deed_Number String,
+            Registration_Date timestamp,
+            Sale_Deed_Date timestamp,
+            Comp_Code STRING,
+            HKC_Source_System_ID BigInt ,
+            HKC_Created_On timestamp,
+            HKC_Modified_On timestamp,
+            HKC_Cardinal_Value String
             )
-
-        if not context.config:
-            raise ParserError(
-                "ParserEngine requires context.config to be populated"
-            )
-
-        # ------------------------------------------------------------
-        # Repository inventory
-        # ------------------------------------------------------------
-        all_repository_entries = repository.notebooks
-
-        known_paths = list(
-            repository.known_notebook_paths
-            or [
-                nb.relative_path
-                for nb in all_repository_entries
-            ]
-        )
-
-        dependency_extractor = DependencyExtractor(
-            known_notebook_paths=known_paths
-        )
-
-        # ------------------------------------------------------------
-        # Migration scope
-        # ------------------------------------------------------------
-        selected_paths = self._load_migration_scope(
-            context,
-            known_paths,
-        )
-
-        normalized_selected = {
-            self._normalize_scope_path(path, context)
-            for path in selected_paths
-        }
-
-        # ------------------------------------------------------------
-        # Match requested notebooks against repository inventory.
-        #
-        # The normalization allows all of these forms to match:
-        #
-        # /PFL/Delta-Lake/foo/notebook
-        #
-        # /PFL/Delta-Lake/foo/notebook.py
-        #
-        # /Workspace/Users/user/repo/PFL/Delta-Lake/foo/notebook
-        #
-        # /Workspace/Users/user/repo/PFL/Delta-Lake/foo/notebook.py
-        # ------------------------------------------------------------
-        notebook_entries = [
-            nb
-            for nb in all_repository_entries
-            if self._normalize_scope_path(
-                nb.relative_path,
-                context,
-            ) in normalized_selected
-        ]
-
-        found_normalized = {
-            self._normalize_scope_path(
-                nb.relative_path,
-                context,
-            )
-            for nb in notebook_entries
-        }
-
-        missing_requested = [
-            requested
-            for requested in selected_paths
-            if self._normalize_scope_path(
-                requested,
-                context,
-            ) not in found_normalized
-        ]
-
-        # ------------------------------------------------------------
-        # Publish migration scope information.
-        # ------------------------------------------------------------
-        context.set_artifact(
-            "migration_scope",
-            {
-                "requested_notebooks": selected_paths,
-                "found_notebooks": [
-                    nb.relative_path
-                    for nb in notebook_entries
-                ],
-                "missing_notebooks": missing_requested,
-                "all_source_notebooks": known_paths,
-            },
-        )
-
-        if missing_requested:
-            logger.warning(
-                "%d requested notebook(s) were not found in "
-                "source repository: %s",
-                len(missing_requested),
-                missing_requested,
-            )
-
-        # ------------------------------------------------------------
-        # IMPORTANT:
-        # If an explicit migration list was supplied but absolutely
-        # nothing matched, stop the pipeline.
-        #
-        # This prevents the previous false-success scenario:
-        #
-        #   5 requested
-        #   0 parsed
-        #   0 transformed
-        #   DEPLOYED
-        # ------------------------------------------------------------
-        if selected_paths and not notebook_entries:
-            raise ParserError(
-                "Migration scope contains requested notebooks, but "
-                "ParserEngine could not match any requested notebook "
-                "againt the repositoryManager inventory. "
-                "Check workspace-root/path normalization."
-            )
-
-        # ------------------------------------------------------------
-        # Migration configuration
-        # ------------------------------------------------------------
-        migration_cfg = context.config.get("migration", {}) or {}
-
-        mapping = dict(
-            migration_cfg.get(
-                "container_bucket_mapping",
-                {},
-            )
-            or {}
-        )
-
-        mapping_file = migration_cfg.get(
-            "container_bucket_mapping_file"
-        )
-
-        # ------------------------------------------------------------
-        # Optional external container -> bucket mapping
-        # ------------------------------------------------------------
-        if mapping_file:
-            mapping_path = Path(mapping_file)
-
-            if not mapping_path.is_absolute():
-                mapping_path = _PROJECT_ROOT / mapping_path
-
-            if not mapping_path.exists():
-                raise ParserError(
-                    f"Container-to-bucket mapping file does not exist: "
-                    f"{mapping_path}"
-                )
-
-            try:
-                # --------------------------------------------
-                # YAML
-                # --------------------------------------------
-                if mapping_path.suffix.lower() in {
-                    ".yaml",
-                    ".yml",
-                }:
-                    import yaml
-
-                    loaded = yaml.safe_load(
-                        mapping_path.read_text(
-                            encoding="utf-8"
-                        )
-                    ) or {}
-
-                    if not isinstance(loaded, dict):
-                        raise ParserError(
-                            "Container-to-bucket YAML mapping "
-                            "must be a mapping"
-                        )
-
-                    mapping.update(loaded)
-
-                # --------------------------------------------
-                # CSV / TXT
-                # --------------------------------------------
-                elif mapping_path.suffix.lower() in {
-                    ".csv",
-                    ".txt",
-                }:
-                    import csv
-
-                    with mapping_path.open(
-                        "r",
-                        encoding="utf-8-sig",
-                        newline="",
-                    ) as fh:
-                        for row in csv.reader(fh):
-                            if (
-                                len(row) >= 2
-                                and row[0].strip().lower()
-                                not in {
-                                    "container",
-                                    "azure container",
-                                }
-                            ):
-                                mapping[
-                                    row[0].strip()
-                                ] = row[1].strip()
-
-                # --------------------------------------------
-                # Excel
-                # --------------------------------------------
-                elif mapping_path.suffix.lower() in {
-                    ".xlsx",
-                    ".xlsm",
-                }:
-                    from openpyxl import load_workbook
-
-                    wb = load_workbook(
-                        mapping_path,
-                        read_only=True,
-                        data_only=True,
-                    )
-
-                    rows = list(
-                        wb.active.iter_rows(
-                            values_only=True
-                        )
-                    )
-
-                    for row in rows[1:]:
-                        if (
-                            len(row) >= 2
-                            and row[0]
-                            and row[1]
-                        ):
-                            mapping[
-                                str(row[0]).strip()
-                            ] = str(row[1]).strip()
-
-                else:
-                    raise ParserError(
-                        "Unsupported mapping file format: "
-                        f"{mapping_path.suffix}"
-                    )
-
-            except ImportError as exc:
-                raise ParserError(
-                    "Required dependency is missing to read "
-                    f"mapping file {mapping_path}"
-                ) from exc
-
-        # ------------------------------------------------------------
-        # Migration analyzer
-        # ------------------------------------------------------------
-        analyzer = MigrationAnalyzer(
-            container_bucket_mapping=mapping,
-            workspace_root=migration_cfg.get(
-                "workspace_root",
-                "${WORKSPACE_ROOT}",
-            ),
-            referred_notebook_path_root=migration_cfg.get(
-                "referred_notebook_path_root",
-                "${TARGET_WORKSPACE_ROOT}",
-            ),
-            source_repo_path=(
-                context.config.get("source", {})
-                or {}
-            ).get(
-                "repo_path",
-                "",
-            ),
-            bucket_variable=migration_cfg.get(
-                "bucket_variable",
-                "bucket",
-            ),
-        )
-
-        # ------------------------------------------------------------
-        # Parse notebooks
-        # ------------------------------------------------------------
-        notebook_results: List[NotebookParseResult] = []
-        all_dependencies: List[NotebookDependency] = []
-        migration_analyses = []
-
-        for entry in notebook_entries:
-            result, deps = self._parse_one_notebook(
-                entry,
-                dependency_extractor,
-                analyzer,
-            )
-
-            notebook_results.append(result)
-            all_dependencies.extend(deps)
-
-            migration_analyses.append(
-                result.migration_analysis.to_dict()
-                if result.migration_analysis
-                else {
-                    "notebook": result.relative_path,
-                    "edits": [],
-                }
-            )
-
-        # ------------------------------------------------------------
-        # Safety check:
-        # explicit migration list + zero parsed notebooks
-        # ------------------------------------------------------------
-        if selected_paths and not notebook_results:
-            raise ParserError(
-                "Migration scope contains requested notebooks, but "
-                "ParserEngine parsed zero notebooks. "
-            )
-
-        # ------------------------------------------------------------
-        # Determine whether dependencies themselves are part of the
-        # explicit migration list.
-        # ------------------------------------------------------------
-        selected_set = {
-            self._normalize_scope_path(
-                path,
-                context,
-            )
-            for path in selected_paths
-        }
-
-        for dependency in all_dependencies:
-            dependency.target_in_migration_list = (
-                self._normalize_scope_path(
-                    dependency.resolved_target,
-                    context,
-                )
-                in selected_set
-                if dependency.resolved_target
-                else False
-            )
-
-        # ------------------------------------------------------------
-        # Dependency graph
-        # ------------------------------------------------------------
-        graph_builder = DependencyGraphBuilder()
-
-        graph = graph_builder.build(
-            known_paths,
-            all_dependencies,
-        )
-
-        graph_summary = graph_builder.summarize(
-            graph,
-            all_dependencies,
-        )
-
-        # ------------------------------------------------------------
-        # Knowledge model
-        # ------------------------------------------------------------
-        model = self._knowledge_model_generator.generate(
-            repo_name=repository.repo_name,
-            notebook_results=notebook_results,
-            dependencies=all_dependencies,
-            graph_summary=graph_summary,
-        )
-
-        model.migration_scope = context.get_artifact(
-            "migration_scope",
-            {},
-        )
-
-        # ------------------------------------------------------------
-        # Write knowledge model
-        # ------------------------------------------------------------
-        output_path = self._write_knowledge_model(
-            context,
-            model.to_dict(),
-        )
-
-        # ------------------------------------------------------------
-        # Publish artifacts
-        # ------------------------------------------------------------
-        context.set_artifact(
-            "knowledge_model",
-            model.to_dict(),
-        )
-
-        context.set_artifact(
-            "dependency_graph_summary",
-            graph_summary.to_dict(),
-        )
-
-        context.set_artifact(
-            "dependency_graph_dot",
-            graph_builder.to_dot(graph),
-        )
-
-        context.set_artifact(
-            "migration_analyses",
-            migration_analyses,
-        )
-
-        context.set_artifact(
-            "parsed_notebook_count",
-            len(notebook_results),
-        )
-
-        context.metadata["parser_complete"] = True
-        context.metadata["knowledge_model_path"] = str(
-            output_path
-        )
-
-        logger.info(
-            "Parsed %d notebook(s); %d dependency edge(s), "
-            "%d azure construct(s), %d manual review item(s). "
-            "Knowledge model written to %s",
-            len(notebook_results),
-            len(model.dependencies["edges"]),
-            len(model.azure_constructs),
-            len(model.manual_review_items),
-            output_path,
-        )
-
-        return context
-
-    # ------------------------------------------------------------------
-    # Migration scope
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _load_migration_scope(
-        context: PipelineContext,
-        known_paths: List[str],
-    ) -> List[str]:
-
-        migration_cfg = (
-            context.config.get("migration", {})
-            or {}
-        )
-
-        # ------------------------------------------------------------
-        # Preferred input: explicit inline list.
-        #
-        # The list is authoritative.
-        # Notebooks discovered as dependencies are NOT automatically
-        # added to the migration scope.
-        # ------------------------------------------------------------
-        inline_list = migration_cfg.get(
-            "notebook_list"
-        ) or []
-
-        if inline_list:
-            if not isinstance(
-                inline_list,
-                (list, tuple),
-            ):
-                raise ParserError(
-                    "migration.notebook_list must be a list"
-                )
-
-            return list(
-                dict.fromkeys(
-                    str(v).strip()
-                    for v in inline_list
-                    if str(v).strip()
-                )
-            )
-
-        # ------------------------------------------------------------
-        # Backward-compatible file input.
-        # ------------------------------------------------------------
-        list_file = migration_cfg.get(
-            "notebook_list_file"
-        )
-
-        if not list_file:
-            return list(known_paths)
-
-        path = Path(list_file)
-
-        if not path.is_absolute():
-            path = _PROJECT_ROOT / path
-
-        if not path.exists():
-            raise ParserError(
-                "Migration notebook list file does not exist: "
-                f"{path}"
-            )
-
-        suffix = path.suffix.lower()
-        values = []
-
-        # ------------------------------------------------------------
-        # CSV / TXT
-        # ------------------------------------------------------------
-        if suffix in {
-            ".csv",
-            ".txt",
-        }:
-            import csv
-
-            with path.open(
-                "r",
-                encoding="utf-8-sig",
-                newline="",
-            ) as fh:
-
-                rows = csv.reader(fh)
-
-                column = str(
-                    migration_cfg.get(
-                        "notebook_path_column",
-                        "Notebook Path",
-                    )
-                )
-
-                for row in rows:
-                    if not row:
-                        continue
-
-                    if not row[0].strip():
-                        continue
-
-                    value = row[0].strip()
-
-                    if value == column:
-                        continue
-
-                    values.append(value)
-
-        # ------------------------------------------------------------
-        # XLSX / XLSM
-        # ------------------------------------------------------------
-        elif suffix in {
-            ".xlsx",
-            ".xlsm",
-        }:
-            try:
-                from openpyxl import load_workbook
-            except ImportError as exc:
-                raise ParserError(
-                    "openpyxl is required to read an Excel "
-                    "migration notebook list"
-                ) from exc
-
-            wb = load_workbook(
-                path,
-                read_only=True,
-                data_only=True,
-            )
-
-            ws = wb.active
-
-            rows = list(
-                ws.iter_rows(
-                    values_only=True
-                )
-            )
-
-            column = str(
-                migration_cfg.get(
-                    "notebook_path_column",
-                    "Notebook Path",
-                )
-            )
-
-            header = [
-                str(v).strip()
-                if v is not None
-                else ""
-                for v in (
-                    rows[0]
-                    if rows
-                    else []
-                )
-            ]
-
-            try:
-                idx = header.index(column)
-            except ValueError:
-                idx = 0
-
-            values = [
-                str(row[idx]).strip()
-                for row in rows[1:]
-                if (
-                    len(row) > idx
-                    and row[idx]
-                )
-            ]
-
+          """)
+    except Exception as e:
+        error = str(e)
+        print(error)
+
+# COMMAND ----------
+
+if error == "No Error":
+    try: 
+        spark.sql(f"""
+CREATE OR REPLACE TEMPORARY VIEW vw_DimCollateralProperty AS
+With cte_1 AS (
+SELECT
+  B.COLLATERAL_NUMBER AS Collateral_ID,
+  GP1.NAME AS Property_Application_Type,
+  CST.name AS Coll_SubType_Property_Details,
+  GP2.NAME AS Type_of_Purchase,
+  BPT.PROPERTY_TYPE AS Property_Type,
+  GP3.NAME AS Nature_of_Property,
+  a.CONTRCTOR AS Contractor,
+  a.ARCHITECT AS Architect,
+  A.CCONST_BASE_VALUE AS Cost_of_Construction,
+  A.CLAND_BASE_VALUE AS Cost_of_Land,
+  PC.NAME AS Property_Classification,
+  GP4.NAME AS Property_Ownership,
+  A.FAIRMKT_BASE_VALUE AS Market_Value,
+  a.CONST_AREA_VAL AS Carpert_Area,
+  A.CONST_AR_MU_CODE AS Carpet_Area_Unit,
+  a.TOTAL_AREA_VAL AS Build_up_Area,
+  A.TOTAL_AR_MU_CODE AS Build_Up_Area_Unit,
+  GP6.NAME AS Property_Purpose,
+  A.age AS Age_of_Property_In_Years,
+  GP7.NAME AS Residual_Age_of_Property,
+  A.PCOST_BASE_VALUE AS Property_Cost,
+  G.AGMVAL_BASE_VALUE AS Agreement_Value,
+  D.COMPLETE_ADDRESS AS Full_Address,
+  d.address_line1 AS Property_Address_1,
+  d.address_line2 AS Property_Address_2,
+  d.address_line3 AS Property_Address_3,
+  city.city_name AS Property_City,
+  STATE.STATE_name AS Property_State,
+  zip_code.zip_code AS Property_Pincode,
+  country.country_name AS Property_Country,
+  CASE
+    CAST(a.IS_BUILDER_CONSTRUCTED AS INTEGER)
+    WHEN 1 THEN 'Yes'
+    ELSE 'No'
+  END AS Builder_Constructed,
+  BP.NAME AS Builder_Company_Name,
+  GP8.NAME AS Tier_of_Builder,
+  BUILDER_PROJECT.code AS Builder_Project_Code,
+  BUILDER_PROJECT.NAME AS Project_Name,
+  CASE
+    CAST(BUILDER_PROJECT.ISAPF AS INTEGER)
+    WHEN 1 THEN 'Yes'
+    ELSE 'No'
+  END AS APF_Flag,
+  CASE
+    CAST(BUILDER_PROJECT.ISADF AS INTEGER)
+    WHEN 1 THEN 'Yes'
+    ELSE 'No'
+  END AS ADF_Flag,
+  BUILDING.NAME AS Building_Name,
+  BUILDING_WING.NAME AS Wing_Name,
+  A.FLAT_NUMBER AS Builder_Flat_Shop_No,
+  A.FLOOR_NUMBER AS Floor_No,
+  BUILDING.COMPLETION_PERCENTAGE AS Building_Completion,
+  A.SELLER_NAME AS Seller_Name,
+  A.PRESENT_REGISTERED_OWNER AS Present_Registered_Owner,
+  A.TCT_NUMBER AS TCT_CCT_No,
+  A.LOT_NUMBER AS LOT_No,
+  A.Percentage_Share AS Percentage_Share,
+  GP9.NAME AS Current_Usage,
+  a.other_remarks AS Other_Remarks,
+  g.registration_number AS Registration_No,
+  GP10.NAME AS Agreement_Type,
+  g.sro AS SRO,
+  g.sale_deed_number AS Sale_Deed_Number,
+  g.REGISTRATION_DATE AS Registration_Date,
+  g.SALE_DEED_DATE AS Sale_Deed_Date,
+  COALESCE(B.COLLATERAL_NUMBER,'') AS HKC_Cardinal_Value
+FROM {silver_catalog_name}.finrep_tab_neo_cms.property_details a
+LEFT OUTER JOIN {silver_catalog_name}.finrep_tab_neo_common_master.address d 
+ON a.address = d.id
+LEFT OUTER JOIN {silver_catalog_name}.finrep_tab_neo_cms.AGREEMENT_DETAILS G 
+ON g.PROPERTY_DETAIL_FK = a.id,
+{silver_catalog_name}.finrep_tab_neo_cms.collateral b
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.GENERIC_PARAMETER GP1
+ON GP1.ID = A.APPLICATION_TYPE
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.COLLATERAL_SUB_TYPE CST
+ON CST.id = b.COLLATERAL_SUB_TYPE
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.GENERIC_PARAMETER GP2
+ON GP2.ID = B.asset_type
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.BUILDER_PROPERTY_TYPE BPT
+ON BPT.ID = A.property_type
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.GENERIC_PARAMETER GP3
+ON GP3.ID = A.NATURE_OF_PROPERTY
+LEFT JOIN   {silver_catalog_name}.finrep_tab_neo_common_master.PROPERTY_CLASSIFICATION PC
+ON PC.ID = A.PROPERTY_CLASSIFICATION
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.GENERIC_PARAMETER GP4
+ON GP4.ID = A.PROPERTY_OWNERSHIP
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.generic_parameter GP5
+ON GP5.id = A.CONSIDERED_VALUATION
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.GENERIC_PARAMETER GP6
+ON GP6.ID = A.PROPERTY_PURPOSE
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.GENERIC_PARAMETER GP7
+ON GP7.ID = A.RESIDUAL_AGE
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.city 
+ON city.id = d.city
+LEFT JOIN {silver_catalog_name}.finrep_tab_neo_common_master.STATE
+ON STATE.id = d.STATE
+LEFT JOIN {silver_catalog_name}.finrep_tab_neo_common_master.zip_code
+ON zip_code.id = D.ZIPCODE
+LEFT JOIN   {silver_catalog_name}.finrep_tab_neo_common_master.country
+ON country.id = D.COUNTRY
+LEFT JOIN {silver_catalog_name}.finrep_tab_neo_common_master.BUSINESS_PARTNER BP
+ON BP.ID = A.BUILDER_COMPANY
+LEFT JOIN (SELECT BUILDER_COMPANY_CATEGORY, ID 
+          FROM {silver_catalog_name}.finrep_tab_neo_common_master.Builder_Company) Builder_Company 
+ON Builder_Company.ID = A.BUILDER_COMPANY
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.GENERIC_PARAMETER GP8
+ON GP8.ID =Builder_Company.BUILDER_COMPANY_CATEGORY
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.BUILDER_PROJECT 
+ON BUILDER_PROJECT.ID = A.BUILDER_PROJECT
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.BUILDING
+ON BUILDING.ID = A.BUILDING
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.BUILDING_WING
+ON BUILDING_WING.ID = A.BUILDING_WING
+LEFT JOIN {silver_catalog_name}.finrep_tab_neo_common_master.GENERIC_PARAMETER GP9
+ON GP9.ID = A.CURRENT_PROPERTY_USAGE
+LEFT JOIN  {silver_catalog_name}.finrep_tab_neo_common_master.GENERIC_PARAMETER GP10
+ON GP10.ID = g.agreement_type
+WHERE
+  a.id = b.property_details
+  AND NOT EXISTS (
+    SELECT
+      1
+    FROM
+      { silver_catalog_name }.finrep_tab_neo_cms.Asset_Details AD
+    WHERE
+      b.ASSET_DETAILS = AD.ID
+  )
+  AND B.COLLATERAL_NUMBER IS NOT NULL
+ AND CAST(a.hkc_insert_date AS DATE) >= CAST('{dim_start_date}' AS DATE)
+)
+SELECT ct.*,cm.collateral_key FROM Cte_1 ct 
+LEFT JOIN {gold_catalog_name}.pfldw.DimCollateralMaster CM ON ct.Collateral_ID = CM.Collateral_ID
+    """)
+    except Exception as e:
+        error = str(e)
+        print(error)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ###IMPLEMENTED SCD FUNCTIONS
+# MAGIC - Execute SCD1 Function 
+
+# COMMAND ----------
+
+# MAGIC %run 
+# MAGIC /Workspace/PFL/Delta-Lake/Gold/pfl_dwh/SCD_FUNCTIONS/fn_dwh_SCD_function
+
+# COMMAND ----------
+
+scd1_load_to_target(f'{gold_catalog_name}.pfldw.DimCollateralProperty','vw_DimCollateralProperty',['HKC_Cardinal_Value'], src_system_id)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##Code Execution End time
+
+# COMMAND ----------
+
+#get endTime of the notebook
+endTime = datetime.datetime.now(tz=timezone)
+print("End time --> ",endTime)
+ 
+#get copyDuration in seconds
+copyDuration = endTime - startTime
+copyDurationInSec = copyDuration.total_seconds()
+print("Copy duration in seconds --> ",copyDurationInSec)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ###Updating report notebook execution config table
+# MAGIC - Last_Sink_Date
+# MAGIC - Satus: "In-Progress" --> "Completed"
+# MAGIC - Business_Date
+
+# COMMAND ----------
+
+while True:
+    try:
+        if error == "No Error":
+            spark.sql(f"""
+                UPDATE {admin_catalog_name}.config.tb_dwh_config
+                SET  Last_Sink_Date = '{trigger_time}', Status = "Succeeded", Business_Date = "{business_date}"
+                WHERE Config_ID = {config_id}
+                """)
+            break
         else:
-            raise ParserError(
-                "Unsupported migration notebook list "
-                f"format: {suffix}. "
-                "Use CSV, TXT, XLSX or XLSM."
-            )
-
-        return list(
-            dict.fromkeys(values)
-        )
-
-    # ------------------------------------------------------------------
-    # Path normalization
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _normalize_scope_path(
-        path: str,
-        context: PipelineContext,
-    ) -> str:
-        """
-        Normalize notebook paths so the following forms are treated
-        as the same notebook:
-
-            /PFL/Delta-Lake/Common/utils
-
-            /PFL/Delta-Lake/Common/utils.py
-
-            /Workspace/Users/user/repo/PFL/Delta-Lake/Common/utils
-
-            /Workspace/Users/user/repo/PFL/Delta-Lake/Common/utils.py
-
-        The returned value is:
-
-            repository-relative
-            lowercase
-            extensionless
-        """
-
-        value = str(
-            path or ""
-        ).strip().replace(
-            "\\",
-            "/",
-        )
-
-        source = (
-            context.config.get("source", {})
-            if context.config
-            else {}
-        )
-
-        # Prefer workspace_path, then repo_path.
-        root = str(
-            source.get("workspace_path")
-            or source.get("repo_path")
-            or "/"
-        ).strip().replace(
-            "\\",
-            "/",
-        )
-
-        root = root.rstrip("/")
-
-        # Always work with a leading slash internally.
-        value = "/" + value.strip("/")
-
-        root_normalized = (
-            "/" + root.strip("/")
-            if root.strip("/")
-            else ""
-        )
-
-        # ------------------------------------------------------------
-        # Remove configured workspace root.
-        #
-        # Example:
-        #
-        # /Workspace/Users/user/repo/PFL/foo
-        #
-        # becomes:
-        #
-        # /PFL/foo
-        # ------------------------------------------------------------
-        if root_normalized:
-            root_lower = root_normalized.lower()
-            value_lower = value.lower()
-
-            if value_lower == root_lower:
-                value = "/"
-
-            elif value_lower.startswith(
-                root_lower + "/"
-            ):
-                value = value[
-                    len(root_normalized):
-                ]
-
-        # ------------------------------------------------------------
-        # Normalize again after root removal.
-        # ------------------------------------------------------------
-        value = "/" + value.strip("/")
-
-        # ------------------------------------------------------------
-        # Remove local source extensions.
-        #
-        # Databricks workspace paths are normally extensionless,
-        # while exported source files contain .py/.sql/.scala.
-        # ------------------------------------------------------------
-        lower_value = value.lower()
-
-        for extension in (
-            ".py",
-            ".sql",
-            ".scala",
-        ):
-            if lower_value.endswith(extension):
-                value = value[
-                    :-len(extension)
-                ]
+            spark.sql(f"""
+                UPDATE {admin_catalog_name}.config.tb_dwh_config
+                SET Status = "Failed"
+                WHERE Config_ID = {config_id}
+                """)
+            break
+    except Exception as e:
+            if "MetadataChangedException" in str(type(e)) or "ConcurrentAppendException" in str(type(e)) :
+                sleep_duration = random.uniform(1,5)
+                time.sleep(sleep_duration)
+            else:
+                error = e
+                print(error)
                 break
 
-        # ------------------------------------------------------------
-        # Final canonical representation.
-        # ------------------------------------------------------------
-        return value.strip("/").lower()
+# COMMAND ----------
 
-    # ------------------------------------------------------------------
-    # Notebook parser
-    # ------------------------------------------------------------------
-
-    def _parse_one_notebook(
-        self,
-        entry: NotebookFile,
-        dependency_extractor: DependencyExtractor,
-        analyzer: MigrationAnalyzer,
-    ):
-        relative_path = entry.relative_path
-        absolute_path = Path(
-            entry.absolute_path
-        )
-        category = entry.category
-
-        # ------------------------------------------------------------
-        # Read notebook
-        # ------------------------------------------------------------
-        try:
-            notebook_source = self._reader.read(
-                relative_path,
-                str(absolute_path),
-            )
-
-        except ParserError as exc:
-            logger.warning(
-                "Notebook '%s' could not be read: %s",
-                relative_path,
-                exc,
-            )
-
-            result = NotebookParseResult(
-                relative_path=relative_path,
-                category=category,
-                language=entry.language.unknown,
-                cell_count=0,
-                parse_error=str(exc),
-            )
-
-            return result, []
-
-        # ------------------------------------------------------------
-        # Magic commands
-        # ------------------------------------------------------------
-        magic_commands = self._magic_parser.parse(
-            notebook_source
-        )
-
-        # ------------------------------------------------------------
-        # Azure / cloud construct detection
-        # ------------------------------------------------------------
-        azure_constructs = self._regex_parser.parse(
-            notebook_source.full_text
-        )
-
-        # ------------------------------------------------------------
-        # Migration analysis
-        # ------------------------------------------------------------
-        migration_analysis = analyzer.analyze(
-            relative_path,
-            notebook_source.full_text,
-        )
-
-        # ------------------------------------------------------------
-        # AST parsing for Python
-        # ------------------------------------------------------------
-        ast_findings = None
-        parse_error = None
-
-        if (
-            notebook_source.language
-            == NotebookLanguage.PYTHON
-        ):
-            try:
-                ast_findings = self._ast_parser.parse(
-                    notebook_source.full_text,
-                    relative_path,
-                )
-
-            except ParserError as exc:
-                parse_error = str(exc)
-
-                logger.warning(
-                    "AST parse failed for '%s': %s",
-                    relative_path,
-                    exc,
-                )
-
-        # ------------------------------------------------------------
-        # SQL parsing
-        # ------------------------------------------------------------
-        sql_findings = self._extract_sql_findings(
-            notebook_source,
-            magic_commands,
-        )
-
-        # ------------------------------------------------------------
-        # Build parse result
-        # ------------------------------------------------------------
-        result = NotebookParseResult(
-            relative_path=relative_path,
-            category=category,
-            language=notebook_source.language.value,
-            cell_count=notebook_source.cell_count,
-            magic_commands=magic_commands,
-            azure_constructs=azure_constructs,
-            ast_findings=ast_findings,
-            sql_findings=sql_findings,
-            parse_error=parse_error,
-            migration_analysis=migration_analysis,
-        )
-
-        # ------------------------------------------------------------
-        # Dependency extraction
-        # ------------------------------------------------------------
-        dependencies = dependency_extractor.extract(
-            relative_path,
-            magic_commands,
-            ast_findings,
-        )
-
-        return result, dependencies
-
-    # ------------------------------------------------------------------
-    # SQL findings
-    # ------------------------------------------------------------------
-
-    def _extract_sql_findings(
-        self,
-        notebook_source,
-        magic_commands,
-    ):
-        sql_text_parts: List[str] = []
-
-        if (
-            notebook_source.language
-            == NotebookLanguage.SQL
-        ):
-            sql_text_parts.append(
-                notebook_source.full_text
-            )
-
-        sql_text_parts.extend(
-            m.argument
-            for m in magic_commands
-            if m.magic_type == "sql"
-        )
-
-        if not sql_text_parts:
-            return None
-
-        return self._sql_parser.parse(
-            "\n".join(sql_text_parts)
-        )
-
-    # ------------------------------------------------------------------
-    # Knowledge model output
-    # ------------------------------------------------------------------
-
-    def _write_knowledge_model(
-        self,
-        context: PipelineContext,
-        model_dict: Dict,
-    ) -> Path:
-
-        output_dir_config = context.config[
-            "output"
-        ][
-            "knowledge_model_dir"
-        ]
-
-        output_dir = Path(
-            output_dir_config
-        )
-
-        if not output_dir.is_absolute():
-            output_dir = (
-                _PROJECT_ROOT
-                / output_dir
-            )
-
-        output_dir.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        output_path = (
-            output_dir
-            / "MigrationKnowledgeModel.json"
-        )
-
-        output_path.write_text(
-            json.dumps(
-                model_dict,
-                indent=2,
-                default=str,
-            ),
-            encoding="utf-8",
-        )
-
-        return output_path
+if error == "No Error":
+    dbutils.notebook.exit(json.dumps({
+        "copyDurationInSec":f"{copyDurationInSec}",
+        "startTime":f"{str(startTime).split('+')[0]}",
+        "endTime":f"{str(endTime).split('+')[0]}",
+        "status":"Succeeded"
+    }))
+else:
+    dbutils.notebook.exit(json.dumps({
+        "copyDurationInSec":f"{copyDurationInSec}",
+        "startTime":f"{str(startTime).split('+')[0]}",
+        "endTime":f"{str(endTime).split('+')[0]}",
+        "status":"Failed",
+        "errorMessage":f"{error}"
+    }))
