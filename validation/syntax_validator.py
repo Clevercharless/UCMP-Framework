@@ -23,7 +23,7 @@ from validation.finding import ValidationCategory, ValidationFinding, Validation
 class SyntaxValidator:
     def validate(self, transformation_plan: Dict, target_root: Path, repository: Dict) -> List[ValidationFinding]:
         findings: List[ValidationFinding] = []
-        language_by_path = {nb["relative_path"]: nb["language"] for nb in repository["notebooks"]}
+        language_by_path = {nb.relative_path: nb.language for nb in repository.notebooks}
 
         for notebook_plan in transformation_plan["notebook_plans"]:
             relative_path = notebook_plan["relative_path"]

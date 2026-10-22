@@ -31,6 +31,9 @@ class RuleValidator:
             for op in notebook_plan["operations"]:
                 if op["action"] != "replace":
                     continue
+                if not op.get("rule_id"):
+                    continue
+
                 original_value = op.get("original_value")
                 resolved_value = op.get("resolved_value")
 
@@ -62,7 +65,7 @@ class RuleValidator:
                 ValidationFinding(
                     category=ValidationCategory.RULE_VALIDATION,
                     severity=ValidationSeverity.INFO,
-                    message="All planned replace operations were correctly applied",
+                    message="All planned rule-based replace operations were correctly applied",
                 )
             )
         return findings

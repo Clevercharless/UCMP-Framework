@@ -24,41 +24,33 @@ def build_banner(
     applied_count: int,
     manual_review_ops: List[Dict],
 ) -> str:
-    """Returns a notebook cell block (including its own COMMAND separator) to insert.
-
-    The block is wrapped in BANNER_START_MARKER/BANNER_END_MARKER sentinel
-    comments so downstream validators (Module 10) can reliably exclude this
-    documentation cell from content scans — quoting a flagged construct's
-    value in the banner's own markdown must never be mistaken for that
-    construct still being present in actual code.
+    """Build a Python/SQL/Scala comment-only migration banner.
     """
     prefix = _COMMENT_PREFIX_BY_LANGUAGE.get(language, "#")
-    magic = f"{prefix} MAGIC "
     separator = f"{prefix} COMMAND ----------"
 
     lines = [
         separator, "",
         f"{prefix} {BANNER_START_MARKER}",
-        f"{magic}%md", f"{magic}## UCMP Migration Notes",
+        f"{prefix} UCMP Migration Notes",
+        f"{prefix}",
+        f"{prefix} This notebook was migrated from Azure Databricks to "
+        f"AWS Databricks by the Universal Cloud Migration Platform (UCMP).",
+        f"{prefix}",
+        f"{prefix} Automatic replacements applied: {applied_count}",
     ]
-    lines.append(f"{magic}")
-    lines.append(
-        f"{magic}This notebook was migrated from **Azure Databricks** to "
-        f"**AWS Databricks** by the Universal Cloud Migration Platform (UCMP)."
-    )
-    lines.append(f"{magic}")
-    lines.append(f"{magic}**Automatic replacements applied:** {applied_count}")
 
     if manual_review_ops:
-        lines.append(f"{magic}")
-        lines.append(f"{magic}**Manual review required ({len(manual_review_ops)} item(s)):**")
+        lines.append(f"{prefix}")
+        lines.append(f"{prefix} Manual review required "
+                     f"({len(manual_review_ops)} items(s)):")
         for op in manual_review_ops:
             value = (op.get("original_value") or "").strip()
             note = (op.get("notes") or "").strip().splitlines()[0] if op.get("notes") else ""
-            lines.append(f"{magic}- `{value}` — {note}")
+            lines.append(f"{prefix}- `{value}` — {note}")
     else:
-        lines.append(f"{magic}")
-        lines.append(f"{magic}**Manual review required:** none")
+        lines.append(f"{prefix}")
+        lines.append(f"{prefix} Manual review required: none")
 
     lines.append("")  # trailing blank line before the next COMMAND separator
     lines.append(f"{prefix} {BANNER_END_MARKER}")

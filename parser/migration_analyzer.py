@@ -9,19 +9,39 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional
+import logging
 
+
+logger = logging.getLogger(__name__)
 
 ABFSS_RE = re.compile(
     r"abfss://(?P<container>[A-Za-z0-9_-]+|\{[A-Za-z_][A-Za-z0-9_]*\})@"
-    r"(?P<account>[A-Za-z0-9_.-]+|\$\{[A-Za-z_][A-Za-z0-9_]*\}|\{[A-Za-z_][A-Za-z0-9_]*\})\.dfs\.core\.windows\.net/"
-    r"(?P<path>[^\s\"')]+)"
+    r"(?P<account>[A-Za-z0-9_.-]+|\$\{[A-Za-z_][A-Za-z0-9_]*\}|\{[A-Za-z_][A-Za-z0-9_]*\})"
+    r"\.dfs\.core\.windows\.net"
+    r"(?:/(?P<path>[^\s\"')]+))?"
 )
-RUN_RE = re.compile(r"(?P<prefix>%run\s+)(?P<quote>[\"']?)(?P<path>/workspace/[^\"'\s]+)(?P=quote)")
+ 
+ 
+# RUN_RE = re.compile(
+#     r"(?P<prefix>%run\s+)(?P<quote>[\"']?)(?P<path>/workspace/[^\s\"']+)(?P=quote)"
+# )
+ 
+# NOTEBOOK_RUN_RE = re.compile(
+#     r"(?P<quote>[\"'])"
+#     r"(?P<path>/Workspace/PFL/[^\"']+)"
+#     r"(?P=quote)"
+# )
+ 
 DYNAMIC_RUN_RE = re.compile(
     r'(?P<prefix>%run\s+)(?P<quote>["\']?)'
     r'(?P<dynamic>\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)(?P<path>/[A-Za-z0-9_. -]+(?:/[A-Za-z0-9_. -]+)*)(?P=quote)'
 )
-VAR_PATH_RE = re.compile(r"^(?P<indent>\s*)(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<quote>[\"'])(?P<path>/workspace/[^\"']+)(?P=quote)\s*$")
+ 
+VAR_PATH_RE = re.compile(
+    r"^(?P<indent>\s*)(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+    r"(?P<quote>[\"'])(?P<path>/workspace/[^\"]+)(?P=quote)\s*$"
+)
+ 
 ASSIGN_RE = re.compile(
     r"^(?P<indent>\s*)(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
     r"dbutils\.widgets\.get\(\s*[\"'](?P<widget>[^\"']+)[\"']\s*\)\s*$"
@@ -83,7 +103,7 @@ class MigrationAnalyzer:
                  workspace_root: str = "${WORKSPACE_ROOT}",
                  referred_notebook_path_root: str = "${TARGET_WORKSPACE_ROOT}",
                  source_repo_path: str = "",
-                 bucket_variable: str = "bucket"):
+                 bucket_variable: str = "bucket_name"):
         self.mapping = {str(k).lower(): str(v) for k, v in (container_bucket_mapping or {}).items()}
         self.workspace_root = workspace_root or "${WORKSPACE_ROOT}"
         self.referred_notebook_path_root = (referred_notebook_path_root or "${TARGET_WORKSPACE_ROOT}").rstrip("/")
@@ -99,7 +119,7 @@ class MigrationAnalyzer:
             for match in ABFSS_RE.finditer(line):
                 container = match.group("container")
                 account = match.group("account")
-                path = match.group("path")
+                path = match.group("path") or ""
                 container_var = self._placeholder_name(container)
                 account_var = self._placeholder_name(account)
                 container_configured = container_var in assignments
@@ -110,24 +130,42 @@ class MigrationAnalyzer:
                     r"\$?\{[A-Za-z_][A-Za-z0-9_]*\}", account
                 ))
                 account_configured = account_var in assignments or account_is_template
+                logger.info(
+                    "ABFSS CONFIG DEBUG: container=%r, account=%r, "
+                    "container_var=%r, account_var=%r, "
+                    "container_configured=%s, account_is_template=%s, "
+                    "account_configured=%s, assignments=%s",
+                    container,
+                    account,
+                    container_var,
+                    account_var,
+                    container_configured,
+                    account_is_template,
+                    account_configured,
+                    list(assignments.keys()),
+                )
                 mapping = None if container_configured else self.mapping.get(container.lower())
 
                 review = False
                 notes = []
                 if container_configured and account_configured:
                     notes.append(f"Source variables '{container_var}' and '{account_var}' feed this ABFSS path.")
-                    replacement = f"s3://{{{self.bucket_variable}}}/{path}"
+                    suffix =f"/{path}" if path else ""
+                    replacement = f"s3://{{{self.bucket_variable}}}{suffix}"
                 elif not container_configured and account_configured:
                     notes.append(f"Source variable '{account_var}' feeds this ABFSS path; container '{container}' is hardcoded.")
-                    replacement = f"s3://{{{self.bucket_variable}}}/{path}"
+                    suffix =f"/{path}" if path else ""
+                    replacement = f"s3://{{{self.bucket_variable}}}{suffix}"
                 elif not container_configured and not account_configured and mapping:
-                    replacement = f"s3://{mapping}/{path}"
+                    suffix =f"/{path}" if path else ""
+                    replacement = f"s3://{mapping}{suffix}"
                     notes.append(f"Container-to-bucket mapping used: {container} -> {mapping}.")
                 else:
                     # The container name is only a mechanical placeholder when
                     # no deterministic mapping is available. Do not carry the
                     # Azure storage-account host syntax into an S3 URI.
-                    replacement = f"s3://{container}/{path}"
+                    suffix =f"/{path}" if path else ""
+                    replacement = f"s3://{container}{suffix}"
                     review = True
                     notes.append(
                         f"No container-to-bucket mapping found for '{container}'; "
@@ -179,20 +217,60 @@ class MigrationAnalyzer:
                 construct_type="target_storage_config",
             ))
 
-        for line_no, line in enumerate(text.splitlines(), 1):
-            for match in RUN_RE.finditer(line):
-                raw = match.group("path")
-                relative = raw[len("/workspace/"):]
-                target = f"{self.workspace_root}/{relative}"
-                result.edits.append(MigrationEdit(
-                    notebook=notebook,
-                    edit_type="workspace_run_path",
-                    original_value=raw,
-                    resolved_value=target,
-                    line_number=line_no,
-                    notes="Converted source workspace-root notebook reference to configurable target workspace root.",
-                    construct_type="workspace_notebook_path",
+        RUN_RE = re.compile(
+            r"%run\s+"
+            r"(?P<quote>[\"']?)"
+            r"(?P<path>/Workspace/[^\s\"']+)"
+            r"(?P=quote)",
+            re.MULTILINE,            
+        )
+
+        for match in RUN_RE.finditer(text):
+            raw = match.group("path")
+            relative = raw[len("/Workspace/"):]
+            target = f"{self.workspace_root}/{relative}"
+            result.edits.append(MigrationEdit(
+                notebook=notebook,
+                edit_type="workspace_run_path",
+                original_value=raw,
+                resolved_value=target,
+                line_number=line_number,
+                notes=("Converted harcoded source workspace %run "
+                       "reference to the configured target workspace root."),
+                construct_type="workspace_notebook_path",
                 ))
+
+        # ------------------------------------------------------------
+        # dbutils.notebook.run() workspace paths
+        # ------------------------------------------------------------
+        NOTEBOOK_RUN_RE = re.compile(
+            r"dbutils\.notebook\.run\s*\(\s*"
+            r"(?P<quote>[\"'])"
+            r"(?P<path>/Workspace/PFL/[^\"']+)"
+            r"(?P=quote)",
+            re.DOTALL,
+            )
+        for match in NOTEBOOK_RUN_RE.finditer(text):
+            raw = match.group("path")
+            relative = raw[len("/Workspace/"):]
+            target = (
+                f"{self.workspace_root.rstrip('/')}/{relative}"
+            )
+            line_number = text.count("\n",0, match.start("path"))+ 1
+            
+            result.edits.append(MigrationEdit(
+                notebook=notebook,
+                edit_type="workspace_notebook_run_path",
+                original_value=raw,
+                resolved_value=target,
+                line_number=line_number,
+                notes=(
+                    "Converted hardcoded source workspace notebook "
+                    "reference to the configured target workspace root."
+                ),
+                construct_type="workspace_notebook_path",
+            ))
+
 
         for line_no, line in enumerate(text.splitlines(), 1):
             match = DYNAMIC_RUN_RE.search(line)

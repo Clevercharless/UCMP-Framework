@@ -70,8 +70,8 @@ class ReplacementEngine(PipelineStage):
         else:
             target_root = self._resolve_target_root(context)
 
-        notebook_paths = {nb["relative_path"]: Path(nb["absolute_path"]) for nb in repository["notebooks"]}
-        notebook_languages = {nb["relative_path"]: nb["language"] for nb in repository["notebooks"]}
+        notebook_paths = {nb.relative_path: Path(nb.absolute_path) for nb in repository.notebooks}
+        notebook_languages = {nb.relative_path: nb.language for nb in repository.notebooks}
 
         results: List[Dict] = []
         for notebook_plan in transformation_plan["notebook_plans"]:
@@ -207,9 +207,12 @@ class ReplacementEngine(PipelineStage):
         if not unique:
             return text, 0
         lines = text.splitlines()
-        if not lines:
-            return text, 0
-        insert_index = 1 if lines[0].startswith(("# Databricks notebook source", "-- Databricks notebook source", "// Databricks notebook source")) else 0
+        source_config_maker = "#UCMP SOURCE CONFIG COMMENTED:"
+        for index,line in enumerate(lines):
+            if source_config_maker in line:
+                lines[index+1:index+1] = unique + [""]
+                return "\n".join(lines), len(unique)
+        insert_index = 1 if lines and lines[0].startswith(("# Databricks notebook source", "-- Databricks notebook source", "// Databricks notebook source")) else 0
         lines[insert_index:insert_index] = unique + [""]
         return "\n".join(lines), len(unique)
 
@@ -259,9 +262,9 @@ class ReplacementEngine(PipelineStage):
 
     def _copy_config_assets(self, repository: Dict, target_root: Path) -> int:
         count = 0
-        for asset in repository.get("config_assets", []):
-            source_path = Path(asset["absolute_path"])
-            output_path = target_root / asset["relative_path"]
+        for asset in repository.config_assets:
+            source_path = Path(asset.absolute_path)
+            output_path = target_root / asset.relative_path
             output_path.parent.mkdir(parents=True, exist_ok=True)
             # In-place mode points target_root at the source repository. The
             # config asset is already in the correct location, so do not copy

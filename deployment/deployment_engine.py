@@ -67,7 +67,7 @@ class DeploymentEngine(PipelineStage):
         replacement_summary = context.get_artifact("replacement_summary")
         repository = context.get_artifact("repository")
 
-        repo_name = repository["repo_name"]
+        repo_name = repository.repo_name
         source_cfg = context.config.get("source", {}) or {}
         target_cfg = context.config.get("target", {}) or {}
         source_mode = str(source_cfg.get("source_mode", "local_repo")).strip().lower()

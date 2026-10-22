@@ -48,7 +48,7 @@ class ConfigValidator:
                 )
             )
 
-        expected_config_assets = len(repository.get("config_assets", []))
+        expected_config_assets = len(repository.config_assets)
         actual_config_assets = replacement_summary.get("config_assets_copied", 0)
         if actual_config_assets != expected_config_assets:
             findings.append(

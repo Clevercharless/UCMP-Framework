@@ -81,7 +81,7 @@ class ValidationEngine(PipelineStage):
         )
         findings += self._secret_detector.validate(transformation_plan, target_root)
 
-        report = self._build_report(repository["repo_name"], findings)
+        report = self._build_report(repository.repo_name, findings)
         output_path = self._write_report(context, report)
 
         context.set_artifact("validation_report", report)

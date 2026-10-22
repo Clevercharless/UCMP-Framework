@@ -126,31 +126,85 @@ class DatabricksWorkspaceClient:
 
     @staticmethod
     def _get_notebook_context_auth():
-        """Return (workspace_url, short-lived context token) when running in Databricks.
+        """
+        Return (workspace_url, short-lived context token) when running
+        inside a Databricks workspace.
 
-        The framework never logs or persists this credential. If the notebook
-        context does not expose it, return None and let normal SDK auth run.
+        Tries the Databricks runtime dbutils context directly first,
+        then falls back to IPython only if necessary.
         """
         try:
             dbutils = None
+
+            # ------------------------------------------------------------
+            # 1. Try Databricks runtime-provided dbutils
+            # ------------------------------------------------------------
             try:
-                from IPython import get_ipython
-                shell = get_ipython()
-                if shell is not None:
-                    dbutils = shell.user_ns.get("dbutils")
+                from dbruntime import dbutils as runtime_dbutils
+
+                dbutils = runtime_dbutils
             except Exception:
                 dbutils = None
+
+            # ------------------------------------------------------------
+            # 2. Fallback: obtain dbutils from the current IPython shell
+            # ------------------------------------------------------------
+            if dbutils is None:
+                try:
+                    from IPython import get_ipython
+
+                    shell = get_ipython()
+
+                    if shell is not None:
+                        dbutils = shell.user_ns.get("dbutils")
+                except Exception:
+                    dbutils = None
 
             if dbutils is None:
                 return None
 
-            context = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
-            api_url = context.apiUrl().get() if context.apiUrl().isDefined() else None
-            api_token = context.apiToken().get() if context.apiToken().isDefined() else None
+            # ------------------------------------------------------------
+            # 3. Read the current Databricks notebook execution context
+            # ------------------------------------------------------------
+            context = (
+                dbutils.notebook
+                .entry_point
+                .getDbutils()
+                .notebook()
+                .getContext()
+            )
+
+            api_url = None
+            api_token = None
+
+            try:
+                api_url_value = context.apiUrl()
+
+                if api_url_value.isDefined():
+                    api_url = api_url_value.get()
+            except Exception:
+                pass
+
+            try:
+                api_token_value = context.apiToken()
+
+                if api_token_value.isDefined():
+                    api_token = api_token_value.get()
+            except Exception:
+                pass
+
+            # ------------------------------------------------------------
+            # 4. Return runtime credentials if available
+            # ------------------------------------------------------------
             if api_url and api_token:
                 return str(api_url), str(api_token)
+
         except Exception as exc:
-            logger.debug("Databricks notebook context authentication unavailable: %s", exc)
+            logger.debug(
+                "Databricks notebook context authentication unavailable: %s",
+                exc,
+            )
+
         return None
 
     # -----------------------------------------------------------------
@@ -513,11 +567,16 @@ class DatabricksWorkspaceClient:
         """Write SOURCE-format notebook content to a Databricks workspace path."""
         if self._sdk_client is not None:
             try:
-                from databricks.sdk.service.workspace import ImportFormat
+                from databricks.sdk.service.workspace import (
+                    ImportFormat,
+                    Language,
+                )
+
                 self._sdk_client.workspace.import_(
                     path=path,
                     content=base64.b64encode(content.encode("utf-8")).decode("ascii"),
                     format=ImportFormat.SOURCE,
+                    language=Language.PYTHON,
                     overwrite=overwrite,
                 )
                 return
@@ -534,6 +593,7 @@ class DatabricksWorkspaceClient:
         payload = json.dumps({
             "path": path,
             "format": "SOURCE",
+            "language": "PYTHON",
             "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
             "overwrite": bool(overwrite),
         }).encode("utf-8")

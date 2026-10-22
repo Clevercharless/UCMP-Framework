@@ -72,6 +72,7 @@ class ConfigurationManager(PipelineStage):
     def run(self, context: PipelineContext) -> PipelineContext:
         config_dict = dataclasses.asdict(self.resolved_config)
         context.config = config_dict
+        context.set_artifact("resolved_config",self.resolved_config)
         context.metadata.setdefault("source_platform", self.resolved_config.source.platform)
         context.metadata.setdefault("target_platform", self.resolved_config.target.platform)
         context.metadata.setdefault("dry_run", self.resolved_config.pipeline.dry_run)

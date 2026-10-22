@@ -27,7 +27,7 @@ def build_migration_summary_report(
 
     lines = [
         heading("Migration Summary Report", 1),
-        heading(f"{repository['repo_name']}: {config['source']['platform']} -> {config['target']['platform']}", 2),
+        heading(f"{repository.repo_name}: {config['source']['platform']} -> {config['target']['platform']}", 2),
         kv_block([
             ("Source platform", config["source"]["platform"]),
             ("Source repository", config["source"]["repo_path"]),

@@ -61,7 +61,34 @@ class TransformationPlanner(PipelineStage):
         operations_by_notebook = self._explode_actions_by_notebook(
             rule_service_output["actions"]
         )
-        self._add_migration_specific_operations(operations_by_notebook, context.get_artifact("migration_analyses", []))
+
+        migration_analyses = context.get_artifact("migration_analyses", [])
+        logger.info(
+            "DEBUG migration_analyses: %s",
+            migration_analyses,
+        )
+        self._add_migration_specific_operations(operations_by_notebook, migration_analyses,)
+
+        logger.info(
+            "DEBUG operaions_by_notebook: %s",
+            list(operations_by_notebook.keys())
+        )
+
+        for key,ops in operations_by_notebook.items():
+            logger.info(
+                "DEBUG notebook=%s operations=%s",
+                key,
+                [
+                    {
+                        "type": op.operation_type,
+                        "action": op.action,
+                        "origial": op.original_value,
+                        "resolved": op.resolved_value,
+                    }
+                    for op in ops
+                ],
+            )
+        
 
         plan = TransformationPlan(repo_name=knowledge_model["repo_name"])
         for notebook_meta in knowledge_model["notebook_metadata"]:
@@ -133,7 +160,7 @@ class TransformationPlanner(PipelineStage):
                 if edit_type == "storage_path":
                     op_type = OperationType.REPLACE_STORAGE_PATH
                     action = "replace"
-                elif edit_type in {"workspace_run_path", "workspace_variable_path", "referred_notebook_path"}:
+                elif edit_type in {"workspace_run_path", "workspace_notebook_run_path", "workspace_variable_path", "referred_notebook_path"}:
                     op_type = OperationType.TRANSFORM_WORKSPACE_NOTEBOOK_PATH
                     action = "replace"
                 elif edit_type == "comment_source_config":
@@ -167,6 +194,12 @@ class TransformationPlanner(PipelineStage):
             relative_path=relative_path, category=notebook_meta["category"]
         )
         plan.operations.append(self._build_keep_business_logic_operation(notebook_meta))
+
+        logger.info(
+            "DEBUG build plan lookup: relative_path=%s, available_keys=%s",
+            relative_path,
+            list(operations_by_notebook.keys()),
+        )
 
         construct_operations = operations_by_notebook.get(relative_path, [])
         construct_operations.sort(key=lambda op: (op.category, op.original_value or ""))

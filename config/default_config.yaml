@@ -18,7 +18,7 @@ target:
 
 pipeline:
   fail_fast: true
-  dry_run: true
+  dry_run: false
 
 rules:
   rules_dir: "ucmp-demo/mappings"
@@ -30,21 +30,17 @@ output:
 
 # Workspace write-back is explicitly opt-in. This does not perform Git commit/push.
 deployment:
-  auto_deploy: false
+  auto_deploy: true
 
 logging:
   level: "INFO"
 
 migration:
   notebook_list:
-    - "/PFL/Delta-Lake/Qlik_Reporting/FinnOne_Receipts_Summary_Report/Report/Product_wise_summary"
-    - "/PFL/Delta-Lake/Qlik_Reporting/FinnOne_Receipts_Summary_Report/Write CSV/write_to_csv_account_classification_wise_summary"
-    - "/PFL/Delta-Lake/Qlik_Reporting/FinnOne_Receipts_Summary_Report/Write CSV/write_to_csv_dpdbucket_wise_summary"
-    - "/PFL/Delta-Lake/Qlik_Reporting/FinnOne_Receipts_Summary_Report/Write CSV/write_to_csv_finnone_receipts_summary"
-    - "/PFL/Delta-Lake/Qlik_Reporting/FinnOne_Receipts_Summary_Report/Write CSV/write_to_csv_product_wise_summary"
-
+    - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCollateralProperty"
   notebook_list_file: ""
   notebook_path_column: "Notebook Path"
+  
 
   # Used for existing /workspace/... notebook references.
   workspace_root: "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake"
@@ -54,7 +50,7 @@ migration:
   # The repository name is retained automatically; this value is the configurable root.
   referred_notebook_path_root: "/Workspace/Users/charless.binny@poonawallafincorp.com"
 
-  bucket_variable: "bucket"
+  bucket_variable: "bucket_name"
 
   container_bucket_mapping:
     appsflyer: "bkt-dl-raw-dev-appsflyer-aps1"
