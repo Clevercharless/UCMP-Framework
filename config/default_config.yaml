@@ -1,0 +1,93 @@
+# UCMP baseline configuration
+project:
+  name: "Universal Cloud Migration Platform"
+  version: "1.0.0"
+
+source:
+  platform: "azure_databricks"
+  repo_path: "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake"
+  workspace_url: "https://dbc-823a9807-66e5.cloud.databricks.com/"
+  source_mode: "workspace"
+  workspace_path: "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/"
+
+target:
+  platform: "aws_databricks"
+  repo_path: "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake"
+  workspace_url: "https://dbc-823a9807-66e5.cloud.databricks.com/"
+  catalog_name: "main"
+
+pipeline:
+  fail_fast: true
+  dry_run: false
+
+rules:
+  rules_dir: "ucmp-demo/mappings"
+
+output:
+  mode: "in_place"
+  reports_dir: "ucmp-demo/reports"
+  knowledge_model_dir: "ucmp-demo/reports/knowledge_model"
+
+# Workspace write-back is explicitly opt-in. This does not perform Git commit/push.
+deployment:
+  auto_deploy: true
+
+logging:
+  level: "INFO"
+
+migration:
+  notebook_list:
+    - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Qlik_Reporting/ABF_Strategic_Alliances_Disbursal_Sales_MIS_Report/Write CSV/write_to_CSV.py"
+    - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Qlik_Reporting/ABF_Strategic_Alliances_Disbursal_Sales_MIS_Report/Report/ABF_Strategic_Alliances_Disbursal_Sales_MIS_Report.py"
+    - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCollateralProperty.py"
+    
+  notebook_list_file: ""
+  notebook_path_column: "Notebook Path"
+  
+
+  # Used for existing /workspace/... notebook references.
+  workspace_root: "/Workspace/Deployed-Assets/{env}"
+
+  # Used specifically for hardcoded referred-notebook/repository paths such as
+  # /Workspace/pfl-repo-dbx-datalake/<notebook>.
+  # The repository name is retained automatically; this value is the configurable root.
+  referred_notebook_path_root: "/Workspace/Deployed-Assets/{env}"
+
+  bucket_variable: "bucket_name"
+
+  container_bucket_mapping:
+    appsflyer: "bkt-dl-raw-{env}-appsflyer-aps1"
+    bedrock-agentcore: "bkt-dl-raw-{env}-bedrock-agentcore-aps1"
+    cca: "bkt-dl-raw-{env}-cca-aps1"
+    datacultr: "bkt-dl-raw-{env}-datacultr-aps1"
+    digital-platform-utilities-mysql: "bkt-dl-raw-{env}-digital-platform-utilities-mysql-aps1"
+    digital-platform-mongo: "bkt-dl-raw-{env}-digital-platform-mongo-aps1"
+    digital-platform-mysql: "bkt-dl-raw-{env}-digital-platform-mysql-aps1"
+    dista: "bkt-dl-raw-{env}-dista-aps1"
+    dynamics-crm: "bkt-dl-raw-{env}-dynamics-crm-aps1"
+    email-source: "bkt-dl-raw-{env}-email-source-aps1"
+    finbox: "bkt-dl-raw-{env}-finbox-aps1"
+    finmechanics: "bkt-dl-raw-{env}-finmechanics-aps1"
+    finnone-replica: "bkt-dl-raw-{env}-finnone-replica-aps1"
+    genesys: "bkt-dl-raw-{env}-genesys-aps1"
+    lentra: "bkt-dl-raw-{env}-lentra-aps1"
+    lentra-cd-lms: "bkt-dl-raw-{env}-lentra-cd-lms-aps1"
+    lsq: "bkt-dl-raw-{env}-lsq-aps1"
+    manual: "bkt-dl-raw-{env}-manual-aps1"
+    mavis: "bkt-dl-raw-{env}-lsq-mavis-aps1"
+    middleware: "bkt-dl-raw-{env}-middleware-aps1"
+    netcore: "bkt-dl-raw-{env}-netcore-aps1"
+    nugget: "bkt-dl-raw-{env}-nugget-aps1"
+    oraclefusion-erp: "bkt-dl-raw-{env}-oraclefusion-erp-aps1"
+    pennant: "bkt-dl-raw-{env}-pennant-aps1"
+    posidex: "bkt-dl-raw-{env}-posidex-aps1"
+    powerpay: "bkt-dl-raw-{env}-powerpay-aps1"
+    qlikapps: "bkt-dl-raw-{env}-tableau-apps-aps1"
+    rezolv: "bkt-dl-raw-{env}-rezolv-aps1"
+    source-email-delivery: "bkt-dl-raw-{env}-source-email-delivery-aps1"
+    stampdoc-push: "bkt-dl-raw-{env}-stampdoc-push-aps1"
+    wbdocuments-mysql: "bkt-dl-raw-{env}-wbdocuments-mysql-aps1"
+    webengage: "bkt-dl-raw-{env}-webengage-aps1"
+    zinghr: "bkt-dl-raw-{env}-zinghr-aps1"
+
+  container_bucket_mapping_file: ""
