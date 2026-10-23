@@ -36,6 +36,7 @@ class OperationType(str, Enum):
     TRANSFORM_WORKSPACE_NOTEBOOK_PATH = "transform_workspace_notebook_path"
     COMMENT_SOURCE_CONFIG = "comment_source_config"
     ADD_TARGET_CONFIG = "add_target_config"
+    RENAME_CONFIG_IDENTIFIER = "rename_config_identifier"
 
 
 _REPLACE_BY_CATEGORY = {

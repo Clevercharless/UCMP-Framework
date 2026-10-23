@@ -155,33 +155,92 @@ class TransformationPlanner(PipelineStage):
         """Add the user-agreed storage/workspace transformations to the normal plan."""
         for analysis in analyses or []:
             notebook = analysis.get("notebook")
-            for edit in analysis.get("edits", []):
+            edits = analysis.get("edits", [])
+
+            saw_env_workspace_path = False
+            saw_env_config = False
+
+            for edit in edits:
+                logger.info("DEBUG migration edit received by planner: %s", edit)
+
                 edit_type = edit.get("edit_type")
+                resolved_value = edit.get("resolved_value") or ""
+
+                if "{env}" in resolved_value:
+                    saw_env_workspace_path = True
+
+                if (
+                    edit_type == "add_target_config"
+                    and "dbutils.widgets.get('env')" in resolved_value
+                ):
+                    saw_env_config = True
+
                 if edit_type == "storage_path":
                     op_type = OperationType.REPLACE_STORAGE_PATH
                     action = "replace"
-                elif edit_type in {"workspace_run_path", "workspace_notebook_run_path", "workspace_variable_path", "referred_notebook_path"}:
+
+                elif edit_type in {
+                    "workspace_run_path",
+                    "workspace_notebook_run_path",
+                    "workspace_variable_path",
+                    "referred_notebook_path",
+                }:
                     op_type = OperationType.TRANSFORM_WORKSPACE_NOTEBOOK_PATH
                     action = "replace"
+
                 elif edit_type == "comment_source_config":
                     op_type = OperationType.COMMENT_SOURCE_CONFIG
                     action = "replace"
+
                 elif edit_type == "add_target_config":
                     op_type = OperationType.ADD_TARGET_CONFIG
                     action = "add_config"
+                
+                elif edit_type == "config_identifier_rename":
+                    op_type = OperationType.RENAME_CONFIG_IDENTIFIER
+                    action = "replace"
+
                 else:
                     continue
+
                 operations_by_notebook.setdefault(notebook, []).append(
                     TransformationOperation(
                         operation_type=op_type,
                         category="migration_specific",
                         action=action,
                         construct_type=edit.get("construct_type"),
-                        original_value=edit.get("original_value") or None,
+                        original_value=(
+                            "" if edit_type == "add_target_config"
+                            else (edit.get("original_value") or None)
+                        ),
                         resolved_value=edit.get("resolved_value"),
                         rule_id=None,
                         requires_manual_review=bool(edit.get("requires_manual_review")),
                         notes=edit.get("notes"),
+                    )
+                )
+
+            # Defensive fallback:
+            # If a workspace path now contains {env}, make sure env widget config
+            # reaches the plan even if ParserEngine/migration_analyses did not pass
+            # the add_target_config edit.
+            if saw_env_workspace_path and not saw_env_config:
+                logger.info(
+                    "DEBUG planner adding fallback env config for notebook=%s",
+                    notebook,
+                )
+
+                operations_by_notebook.setdefault(notebook, []).append(
+                    TransformationOperation(
+                        operation_type=OperationType.ADD_TARGET_CONFIG,
+                        category="migration_specific",
+                        action="add_config",
+                        construct_type="target_storage_config",
+                        original_value="",
+                        resolved_value="env = dbutils.widgets.get('env')",
+                        rule_id=None,
+                        requires_manual_review=False,
+                        notes="Added target environment configuration using 'env'.",
                     )
                 )
 

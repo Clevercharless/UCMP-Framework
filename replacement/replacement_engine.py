@@ -179,6 +179,109 @@ class ReplacementEngine(PipelineStage):
             "operations_applied": applied_count,
             "manual_review_count": len(manual_review_ops),
         }
+    
+    @staticmethod
+    def _command_separator(language: str) -> str:
+        prefix_by_language = {
+            "python": "#",
+            "sql": "--",
+            "scala": "//",
+        }
+        prefix = prefix_by_language.get(str(language or "python").lower(), "#")
+        return f"{prefix} COMMAND ----------"
+
+    @classmethod
+    def _insert_config_cell(
+        cls,
+        text: str,
+        language: str,
+        config_lines: List[str],
+    ) -> str:
+        """
+        Insert generated config lines as a separate Databricks cell.
+
+        This prevents:
+
+            bucket_name = ...
+            %md
+
+        from ending up in the same cell.
+        """
+
+        clean_lines = []
+        seen = set()
+
+        for line in config_lines:
+            value = str(line or "").strip()
+
+            if not value:
+                continue
+
+            if value in text:
+                continue
+
+            if value in seen:
+                continue
+
+            seen.add(value)
+            clean_lines.append(value)
+
+        if not clean_lines:
+            return text
+
+        separator = cls._command_separator(language)
+        lines = text.splitlines()
+
+        # Preferred location:
+        # after UCMP banner end and its following COMMAND separator.
+        banner_end_index = None
+        for i, line in enumerate(lines):
+            if "UCMP_BANNER_END" in line:
+                banner_end_index = i
+                break
+
+        if banner_end_index is not None:
+            insert_index = banner_end_index + 1
+
+            # If banner is followed by a COMMAND separator, insert after it.
+            for j in range(banner_end_index + 1, min(len(lines), banner_end_index + 8)):
+                if "COMMAND ----------" in lines[j]:
+                    insert_index = j + 1
+                    break
+
+            block = []
+            block.extend(clean_lines)
+            block.append("")
+            block.append(separator)
+            block.append("")
+
+            lines[insert_index:insert_index] = block
+            return "\n".join(lines) + "\n"
+
+        # Fallback: after Databricks notebook header.
+        if lines and lines[0].strip() == "# Databricks notebook source":
+            block = [
+                separator,
+                "",
+                *clean_lines,
+                "",
+                separator,
+                "",
+            ]
+            lines[1:1] = block
+            return "\n".join(lines) + "\n"
+
+        # Final fallback: top of file.
+        block = [
+            separator,
+            "",
+            *clean_lines,
+            "",
+            separator,
+            "",
+        ]
+
+        return "\n".join(block) + text
 
     @staticmethod
     def _apply_operations(text: str, operations: List[Dict]) -> Tuple[str, int]:
@@ -195,35 +298,84 @@ class ReplacementEngine(PipelineStage):
             applied_count += 1
         return text, applied_count
 
-    @staticmethod
-    def _apply_target_config_additions(text: str, operations: List[Dict], language: str) -> Tuple[str, int]:
-        additions = [op.get("resolved_value") for op in operations if op.get("action") == "add_config" and op.get("resolved_value")]
+    @classmethod
+    def _apply_target_config_additions(
+        cls,
+        text: str,
+        operations: List[Dict],
+        language: str,
+    ) -> Tuple[str, int]:
+        additions = [
+            op.get("resolved_value")
+            for op in operations
+            if op.get("action") == "add_config" and op.get("resolved_value")
+        ]
+
         if not additions:
             return text, 0
+
         unique = []
+        seen = set()
+
         for value in additions:
-            if value not in unique and value not in text:
-                unique.append(value)
+            value = str(value or "").strip()
+
+            if not value:
+                continue
+
+            if value in text:
+                continue
+
+            if value in seen:
+                continue
+
+            seen.add(value)
+            unique.append(value)
+
         if not unique:
             return text, 0
-        lines = text.splitlines()
-        source_config_maker = "#UCMP SOURCE CONFIG COMMENTED:"
-        for index,line in enumerate(lines):
-            if source_config_maker in line:
-                lines[index+1:index+1] = unique + [""]
-                return "\n".join(lines), len(unique)
-        insert_index = 1 if lines and lines[0].startswith(("# Databricks notebook source", "-- Databricks notebook source", "// Databricks notebook source")) else 0
-        lines[insert_index:insert_index] = unique + [""]
-        return "\n".join(lines), len(unique)
+
+        text = cls._insert_config_cell(
+            text=text,
+            language=language,
+            config_lines=unique,
+        )
+
+        return text, len(unique)
 
     @staticmethod
-    def _insert_banner(text: str, language: str, applied_count: int, manual_review_ops: List[Dict]) -> str:
+    def _insert_banner(
+        text: str,
+        language: str,
+        applied_count: int,
+        manual_review_ops: List[Dict],
+    ) -> str:
+        """
+        Insert UCMP migration banner as a separate Databricks cell.
+
+        The banner returned by build_banner() already contains:
+            # COMMAND ----------
+            ...
+            # COMMAND ----------
+
+        So this function must not strip or rebuild command separators.
+        """
+        banner = build_banner(language, applied_count, manual_review_ops).strip("\n")
+
         lines = text.splitlines()
-        if not lines:
-            return text
-        header, rest = lines[0], "\n".join(lines[1:])
-        banner = build_banner(language, applied_count, manual_review_ops)
-        return f"{header}\n\n{banner}\n{rest}"
+
+        # Preserve Databricks source header as the first line.
+        if lines and lines[0].strip() == "# Databricks notebook source":
+            header = lines[0]
+            rest = "\n".join(lines[1:]).lstrip("\n")
+
+            if rest:
+                return f"{header}\n{banner}\n{rest}\n"
+
+            return f"{header}\n{banner}\n"
+
+        # If no Databricks header exists, put banner at very top.
+        return f"{banner}\n{text}"
 
     def _build_workspace_client(self, context: PipelineContext):
         from repository.databricks_workspace import DatabricksWorkspaceClient

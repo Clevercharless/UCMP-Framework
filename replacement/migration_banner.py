@@ -52,6 +52,9 @@ def build_banner(
         lines.append(f"{prefix}")
         lines.append(f"{prefix} Manual review required: none")
 
-    lines.append("")  # trailing blank line before the next COMMAND separator
     lines.append(f"{prefix} {BANNER_END_MARKER}")
+    lines.append("")
+    lines.append(separator)
+    lines.append("")
+
     return "\n".join(lines)
