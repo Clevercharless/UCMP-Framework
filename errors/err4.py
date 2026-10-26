@@ -1,27 +1,17 @@
-```python
-import reporting.reporting_engine as reporting_module
-import inspect
+Method object: <staticmethod(<function ReportingEngine._write_reports at 0x7f7a926d5e40>)>
+Method type: <class 'staticmethod'>
+Code filename: /Workspace/Users/charless.binny@poonawallafincorp.com/UCMP-Framework/reporting/reporting_engine.py
+First line: 124
 
-cls = reporting_module.ReportingEngine
-method = cls.__dict__.get("_write_reports")
+All matching class members:
+_resolve_reports_dir <function ReportingEngine._resolve_reports_dir at 0x7f7a926d5da0>
+_write_reports <staticmethod(<function ReportingEngine._write_reports at 0x7f7a926d5e40>)>
 
-print("Method object:", method)
-print("Method type:", type(method))
-
-func = getattr(method, "__func__", method)
-
-if hasattr(func, "__code__"):
-    print("Code filename:", func.__code__.co_filename)
-    print("First line:", func.__code__.co_firstlineno)
-
-print("\nAll matching class members:")
-for name, member in cls.__dict__.items():
-    if "write_reports" in name or "resolve_reports" in name:
-        print(name, repr(member))
-
-print("\nActual source:")
-try:
-    print(inspect.getsource(func))
-except Exception as e:
-    print("Source retrieval failed:", repr(e))
-```
+Actual source:
+    def _resolve_reports_dir(self, context: PipelineContext) -> Path:
+        configured = context.config["output"]["reports_dir"]
+        path = Path(configured)
+        if not path.is_absolute():
+            path = _PROJECT_ROOT / path
+        path.mkdir(parents=True, exist_ok=True)
+        return path
