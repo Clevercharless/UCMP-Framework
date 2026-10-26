@@ -1,12 +1,27 @@
-import inspect
-import reporting.reporting_engine as reporting_module
+```python
+import sys
+import importlib
 
-cls = reporting_module.ReportingEngine
+PROJECT_PACKAGE = "reporting"
 
-print("Module:", reporting_module.__file__)
-print("Method signature:", inspect.signature(cls._write_reports))
-print("Is static method:", isinstance(cls.__dict__["_write_reports"], staticmethod))
+# Find all already-imported modules belonging to the package.
+modules_to_reload = [
+    name
+    for name in sys.modules
+    if name == PROJECT_PACKAGE or name.startswith(PROJECT_PACKAGE + ".")
+]
 
-print("\nActual method implementation:")
-print(inspect.unwrap(cls._write_reports).__code__.co_firstlineno)
-print(inspect.getsource(inspect.unwrap(cls._write_reports)))
+# Reload submodules before parent packages.
+modules_to_reload.sort(key=lambda name: name.count("."), reverse=True)
+
+for name in modules_to_reload:
+    module = sys.modules.get(name)
+    if module is not None:
+        try:
+            importlib.reload(module)
+            print(f"Reloaded: {name}")
+        except Exception as exc:
+            print(f"Failed: {name}: {exc}")
+
+print("Reload complete.")
+```
