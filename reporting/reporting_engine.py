@@ -126,7 +126,7 @@ class ReportingEngine(PipelineStage):
         output_dir = Path(output_dir)
         written_paths = {}
         for filename, content in reports.items():
-        # Extract the report name without its extension.
+            # Extract the report name without its extension.
             report_name = Path(filename).stem
             # Create a separate directory for each report type.
             report_dir = output_dir / report_name
@@ -138,7 +138,7 @@ class ReportingEngine(PipelineStage):
             # Write the report.
             output_path.write_text(content, encoding="utf-8")
 
-        # Store the relative report path.
+            # Store the relative report path.
             written_paths[filename] = str(output_path)
 
         return written_paths
