@@ -123,26 +123,22 @@ class ReportingEngine(PipelineStage):
     
     @staticmethod
     def _write_reports(self, output_dir, reports, context):
-    from pathlib import Path
-
-    output_dir = Path(output_dir)
-    written_paths = {}
-
-    for filename, content in reports.items():
+        output_dir = Path(output_dir)
+        written_paths = {}
+        for filename, content in reports.items():
         # Extract the report name without its extension.
-        report_name = Path(filename).stem
+            report_name = Path(filename).stem
+            # Create a separate directory for each report type.
+            report_dir = output_dir / report_name
+            report_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create a separate directory for each report type.
-        report_dir = output_dir / report_name
-        report_dir.mkdir(parents=True, exist_ok=True)
+            # Generate a timestamped filename inside the report directory.
+            output_path = timestamped_path(report_dir / filename)
 
-        # Generate a timestamped filename inside the report directory.
-        output_path = timestamped_path(report_dir / filename)
-
-        # Write the report.
-        output_path.write_text(content, encoding="utf-8")
+            # Write the report.
+            output_path.write_text(content, encoding="utf-8")
 
         # Store the relative report path.
-        written_paths[filename] = str(output_path)
+            written_paths[filename] = str(output_path)
 
-    return written_paths
+        return written_paths
