@@ -9,6 +9,7 @@ cyclicality, topological execution order, and any unresolved references.
 from __future__ import annotations
 
 from typing import Dict
+from common.output_naming import timestamped_path
 
 from reporting.markdown_utils import bullet_list, heading, kv_block, table
 

@@ -8,6 +8,7 @@ processed by a Markdown engine with extensions.
 """
 
 from __future__ import annotations
+from common.output_naming import timestamped_path
 
 from typing import Iterable, Sequence
 

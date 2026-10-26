@@ -11,6 +11,7 @@ who doesn't want to read raw JSON.
 from __future__ import annotations
 
 from typing import Dict
+from common.output_naming import timestamped_path
 
 from reporting.markdown_utils import heading, kv_block, table
 

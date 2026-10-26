@@ -10,6 +10,7 @@ than making a reviewer hunt through five different JSON files.
 """
 
 from __future__ import annotations
+from common.output_naming import timestamped_path
 
 from typing import Dict
 

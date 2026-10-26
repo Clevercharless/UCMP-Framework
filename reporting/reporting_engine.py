@@ -19,6 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
+
 from common.exceptions import ReportingEngineError
 from common.logging_config import get_logger
 from orchestrator.context import PipelineContext
@@ -30,6 +31,7 @@ from reporting.migration_summary_report import build_migration_summary_report
 from reporting.parser_report import build_parser_report
 from reporting.transformation_report import build_transformation_report
 from reporting.validation_report_md import build_validation_report_md
+from common.output_naming import timestamped_path
 
 logger = get_logger(__name__)
 
@@ -78,7 +80,7 @@ class ReportingEngine(PipelineStage):
         }
 
         output_dir = self._resolve_reports_dir(context)
-        written_paths = self._write_reports(output_dir, reports)
+        written_paths = self._write_reports(output_dir, reports, context)
 
         context.set_artifact("reports", {"reports_dir": str(output_dir), "files": written_paths})
         context.metadata["reporting_complete"] = True
@@ -118,11 +120,18 @@ class ReportingEngine(PipelineStage):
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    
     @staticmethod
-    def _write_reports(output_dir: Path, reports: Dict[str, str]) -> Dict[str, str]:
+    def _write_reports(output_dir, reports, context):
         written_paths = {}
+        
         for filename, content in reports.items():
-            output_path = output_dir / filename
+            output_path = timestamped_path(
+                output_dir / filename,
+                context
+            )
+        
             output_path.write_text(content, encoding="utf-8")
             written_paths[filename] = str(output_path)
+        
         return written_paths
