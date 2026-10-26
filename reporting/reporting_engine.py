@@ -121,7 +121,7 @@ class ReportingEngine(PipelineStage):
         return path
 
     
-    @staticmethod
+    
     def _write_reports(output_dir, reports, context):
         output_dir = Path(output_dir)
         written_paths = {}
