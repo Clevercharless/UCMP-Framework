@@ -1,4 +1,4 @@
-```python
+
 """
 reporting.manual_review_report
 =================================
@@ -301,4 +301,3 @@ def build_manual_review_report(
     lines.extend(_render_credential_findings(credential_findings))
 
     return "\n".join(lines)
-```
