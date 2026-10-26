@@ -1,0 +1,4 @@
+Notebook Path
+Bronze/ingest_customer.py
+Silver/customer_transform.py
+Gold/customer_summary.py

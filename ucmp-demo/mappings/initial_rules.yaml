@@ -1,0 +1,82 @@
+- rule_id: AZURE_IDENTITY_IMPORT_REVIEW
+  category: azure_identity
+  match_type: regex
+  pattern: "azure\\.identity|DefaultAzureCredential|ClientSecretCredential|ManagedIdentityCredential"
+  action: manual_review
+  description: "Azure identity authentication constructs require manual review for AWS Databricks migration."
+  priority: 100
+  requires_manual_review: true
+ 
+- rule_id: AZURE_BLOB_SDK_REVIEW
+  category: azure_blob
+  match_type: regex
+  pattern: "azure\\.storage\\.blob|BlobServiceClient|ContainerClient|BlobClient"
+  action: manual_review
+  description: "Azure Blob Storage SDK constructs require review because the target platform uses AWS S3."
+  priority: 100
+  requires_manual_review: true
+ 
+- rule_id: AZURE_KEY_VAULT_REVIEW
+  category: secret
+  match_type: regex
+  pattern: "azure\\.keyvault|SecretClient|KeyVaultSecret"
+  action: manual_review
+  description: "Azure Key Vault constructs require manual review for AWS secret management migration."
+  priority: 100
+  requires_manual_review: true
+ 
+- rule_id: DBUTILS_MOUNT_REVIEW
+  category: storage
+  match_type: regex
+  pattern: "dbutils\\.fs\\.mount|dbutils\\.fs\\.unmount"
+  action: manual_review
+  description: "Databricks mount operations require manual review because mounted Azure storage does not directly map to AWS S3."
+  priority: 100
+  requires_manual_review: true
+ 
+
+ 
+- rule_id: AZURE_BLOB_ENDPOINT_REVIEW
+  category: storage
+  match_type: regex
+  pattern: "https?://[^\\s\"']+\\.blob\\.core\\.windows\\.net[^\\s\"']*"
+  action: manual_review
+  description: "Azure Blob Storage endpoints require manual review for AWS S3 migration."
+  priority: 100
+  requires_manual_review: true
+ 
+- rule_id: AZURE_JDBC_REVIEW
+  category: jdbc
+  match_type: regex
+  pattern: "jdbc:(?:sqlserver|postgresql|mysql)://[^\\s\"']*"
+  action: manual_review
+  description: "JDBC connections require review to determine the corresponding AWS target database or endpoint."
+  priority: 100
+  requires_manual_review: true
+ 
+- rule_id: DBUTILS_SECRET_REVIEW
+  category: secret
+  match_type: regex
+  pattern: "dbutils\\.secrets\\.(get|getBytes)"
+  action: manual_review
+  description: "Databricks secret access requires review to determine the corresponding AWS secret configuration."
+  priority: 100
+  requires_manual_review: true
+ 
+- rule_id: WORKSPACE_NOTEBOOK_REFERENCE
+  category: workspace
+  match_type: regex
+  pattern: "/Workspace/PFL/[^\"'\\s]+"
+  action: manual_review
+  description: "Hardcoded workspace notebook references require migration to the configured target workspace root."
+  priority: 100
+  requires_manual_review: true
+ 
+- rule_id: WORKSPACE_RUN_REFERENCE
+  category: workspace
+  match_type: regex
+  pattern: "%run\\s+[\"']?/workspace/[^\\s\"']+"
+  action: manual_review
+  description: "Workspace %run references require migration to the configured target workspace location."
+  priority: 100
+  requires_manual_review: true

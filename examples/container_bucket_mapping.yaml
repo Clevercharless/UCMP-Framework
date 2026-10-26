@@ -1,0 +1,4 @@
+# Azure container -> AWS S3 bucket mapping
+qlikapps: raw_qlik
+customer: raw_customer
+finance: raw_finance
