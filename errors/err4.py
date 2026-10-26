@@ -1,33 +1,27 @@
-import inspect
-import reporting.reporting_engine as reporting_module
+=== CLASS FILE ===
+/Workspace/Users/charless.binny@poonawallafincorp.com/UCMP-Framework/reporting/reporting_engine.py
 
-ReportingEngine = reporting_module.ReportingEngine
+=== METHOD OBJECT ===
+<staticmethod(<function ReportingEngine._write_reports at 0x7f7a926d5e40>)>
+Type: <class 'staticmethod'>
 
-print("=== CLASS FILE ===")
-print(inspect.getfile(ReportingEngine))
+=== METHOD SIGNATURE ===
+(self, output_dir, reports, context)
 
-print("\n=== METHOD OBJECT ===")
-method = ReportingEngine.__dict__.get("_write_reports")
-print(method)
-print("Type:", type(method))
+=== METHOD CODE LOCATION ===
+Code filename: /Workspace/Users/charless.binny@poonawallafincorp.com/UCMP-Framework/reporting/reporting_engine.py
+First line: 124
 
-print("\n=== METHOD SIGNATURE ===")
-print(inspect.signature(ReportingEngine._write_reports))
+=== SOURCE ===
+    def _resolve_reports_dir(self, context: PipelineContext) -> Path:
+        configured = context.config["output"]["reports_dir"]
+        path = Path(configured)
+        if not path.is_absolute():
+            path = _PROJECT_ROOT / path
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
-print("\n=== METHOD CODE LOCATION ===")
-func = getattr(method, "__func__", method)
-print("Code filename:", getattr(func, "__code__", None).co_filename
-      if hasattr(func, "__code__") else "Unavailable")
-print("First line:", getattr(func, "__code__", None).co_firstlineno
-      if hasattr(func, "__code__") else "Unavailable")
 
-print("\n=== SOURCE ===")
-try:
-    print(inspect.getsource(func))
-except Exception as exc:
-    print("Could not retrieve source:", repr(exc))
-
-print("\n=== CLASS METHOD DEFINITIONS ===")
-for name, member in ReportingEngine.__dict__.items():
-    if "write_reports" in name or "resolve_reports" in name:
-        print(name, repr(member))
+=== CLASS METHOD DEFINITIONS ===
+_resolve_reports_dir <function ReportingEngine._resolve_reports_dir at 0x7f7a926d5da0>
+_write_reports <staticmethod(<function ReportingEngine._write_reports at 0x7f7a926d5e40>)>
