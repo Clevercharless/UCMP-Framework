@@ -227,7 +227,7 @@ class MigrationAnalyzer:
             f'{self.bucket_variable} = dbutils.widgets.get("{self.bucket_variable}")'
         )
         env_variable = "env"
-        env_config = 'env = os.getenv("env")'
+        env_config = 'env = os.getenv("ENV","dev")'
 
         # ------------------------------------------------------------
         # ABFSS storage paths
