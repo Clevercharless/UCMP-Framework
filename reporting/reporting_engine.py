@@ -133,7 +133,7 @@ class ReportingEngine(PipelineStage):
             report_dir.mkdir(parents=True, exist_ok=True)
 
             # Generate a timestamped filename inside the report directory.
-            output_path = timestamped_path(report_dir / filename)
+            output_path = timestamped_path(report_dir / filename, context)
 
             # Write the report.
             output_path.write_text(content, encoding="utf-8")
