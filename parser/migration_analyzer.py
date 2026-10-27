@@ -153,7 +153,6 @@ class MigrationAnalyzer:
         source_repo_path: str = "",
         bucket_variable: str = "bucket_name",
         enable_bucket_name_declaration: bool = False,
-        enable_referred_notebook_path_changes: bool = False,
     ):
         self.mapping = {
             str(k).lower(): str(v)
@@ -166,9 +165,6 @@ class MigrationAnalyzer:
         self.source_repo_path = str(source_repo_path or "").strip().rstrip("/")
         self.bucket_variable = bucket_variable or "bucket_name"
         self.enable_bucket_name_declaration = enable_bucket_name_declaration
-        self.enable_referred_notebook_path_changes = (
-            enable_referred_notebook_path_changes
-        )
 
     # ------------------------------------------------------------------
     # [idempotency fix] helpers
