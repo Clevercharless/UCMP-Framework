@@ -698,28 +698,23 @@ class MigrationAnalyzer:
         # becomes:
         #   ${TARGET_WORKSPACE_ROOT}/pfl-repo-dbx-datalake/X
         # ------------------------------------------------------------
-        if self.enable_referred_notebook_path_changes:
-            repo_name = (
-                Path(self.source_repo_path).name
-                if self.source_repo_path
-                else ""
-            )
-            
-            if repo_name:
-                source_prefixes = {
-                    f"/Workspace/{repo_name}/",
-                    f"{self.source_repo_path}/" if self.source_repo_path else "",
-                }
-                source_prefixes.discard("")
-                
-                target_prefix = f"{self.referred_notebook_path_root}/{repo_name}/"
-                
-                for line_no, line in enumerate(text.splitlines(), 1):
-                    for source_prefix in sorted(source_prefixes, key=len, reverse=True):
-                        # [idempotency fix] a no-op rewrite, or an occurrence that is
-                        # already inside the target prefix, must not be rewritten again.
-                        if source_prefix == target_prefix:
-                            continue
+        repo_name = Path(self.source_repo_path).name if self.source_repo_path else ""
+
+        if repo_name:
+            source_prefixes = {
+                f"/Workspace/{repo_name}/",
+                f"{self.source_repo_path}/" if self.source_repo_path else "",
+            }
+            source_prefixes.discard("")
+
+            target_prefix = f"{self.referred_notebook_path_root}/{repo_name}/"
+
+            for line_no, line in enumerate(text.splitlines(), 1):
+                for source_prefix in sorted(source_prefixes, key=len, reverse=True):
+                    # [idempotency fix] a no-op rewrite, or an occurrence that is
+                    # already inside the target prefix, must not be rewritten again.
+                    if source_prefix == target_prefix:
+                        continue
                     if self._has_unmigrated_occurrence(line, source_prefix, target_prefix):
                         result.edits.append(
                             MigrationEdit(
