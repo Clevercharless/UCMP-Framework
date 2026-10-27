@@ -10,7 +10,10 @@ A path that has already been migrated (for example
 ``/Workspace/``, so it used to be treated as a *source* path and re-rooted
 again, producing ``/Workspace/Deployed-Assets/{env}/Deployed-Assets/{env}/PFL/...``.
 Every place that builds a target path from a ``/Workspace/...`` path now skips
-paths that already live under the configured ``workspace_root``.
+paths that already live under a configured root (``workspace_root`` or
+``referred_notebook_path_root``). The referred-repository rule is guarded too:
+a source prefix such as ``/Workspace/Deployed-Assets/`` no longer matches the
+start of an already-migrated ``/Workspace/Deployed-Assets/{env}/...`` path.
 """
 from __future__ import annotations
 
@@ -164,22 +167,33 @@ class MigrationAnalyzer:
     # ------------------------------------------------------------------
     # [idempotency fix] helpers
     # ------------------------------------------------------------------
+    def _migrated_roots(self) -> List[str]:
+        """Both configured roots; a path under either one was produced by a previous run."""
+        roots = {
+            self.workspace_root.rstrip("/"),
+            self.referred_notebook_path_root.rstrip("/"),
+        }
+        return sorted((r for r in roots if r), key=len, reverse=True)
+
     def _already_target(self, path: str) -> bool:
         """
-        True when ``path`` already lives under the configured workspace root,
-        i.e. it was produced by a previous run and must not be re-rooted.
+        True when ``path`` already lives under a configured target root
+        (``workspace_root`` or ``referred_notebook_path_root``), i.e. it was
+        produced by a previous run and must not be re-rooted.
 
         The comparison is case-sensitive on purpose: path case is never folded.
         """
-        root = self.workspace_root.rstrip("/")
-        return bool(root) and (path == root or path.startswith(root + "/"))
+        return any(path == root or path.startswith(root + "/") for root in self._migrated_roots())
 
-    @staticmethod
-    def _has_unmigrated_occurrence(line: str, source_prefix: str, target_prefix: str) -> bool:
+    def _has_unmigrated_occurrence(self, line: str, source_prefix: str, target_prefix: str) -> bool:
         """
-        True if ``source_prefix`` occurs in ``line`` somewhere that is NOT
-        already inside a ``target_prefix`` occurrence. Stops the referred-path
-        rule from firing again on text it has already rewritten.
+        True if ``source_prefix`` occurs in ``line`` at a place that has NOT
+        already been migrated. An occurrence counts as migrated when it
+
+        * lies inside an occurrence of ``target_prefix``, or
+        * starts a path that is already under a configured root. This is what
+          stops e.g. the source prefix ``/Workspace/Deployed-Assets/`` from
+          matching the start of ``/Workspace/Deployed-Assets/{env}/PFL/...``.
         """
         target_spans = []
         start = 0
@@ -190,12 +204,15 @@ class MigrationAnalyzer:
             target_spans.append((idx, idx + len(target_prefix)))
             start = idx + 1
 
+        roots = self._migrated_roots()
         start = 0
         while True:
             idx = line.find(source_prefix, start)
             if idx == -1:
                 return False
-            if not any(lo <= idx < hi for lo, hi in target_spans):
+            inside_target = any(lo <= idx < hi for lo, hi in target_spans)
+            starts_migrated_path = any(line.startswith(root + "/", idx) for root in roots)
+            if not inside_target and not starts_migrated_path:
                 return True
             start = idx + 1
 
