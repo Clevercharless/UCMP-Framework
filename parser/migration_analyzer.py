@@ -152,6 +152,8 @@ class MigrationAnalyzer:
         referred_notebook_path_root: str = "${TARGET_WORKSPACE_ROOT}",
         source_repo_path: str = "",
         bucket_variable: str = "bucket_name",
+        enable_bucket_name_declaration: bool = False,
+        enable_referred_notebook_path_changes: bool = False,
     ):
         self.mapping = {
             str(k).lower(): str(v)
@@ -163,6 +165,10 @@ class MigrationAnalyzer:
         ).rstrip("/")
         self.source_repo_path = str(source_repo_path or "").strip().rstrip("/")
         self.bucket_variable = bucket_variable or "bucket_name"
+        self.enable_bucket_name_declaration = enable_bucket_name_declaration
+        self.enable_referred_notebook_path_changes = (
+            enable_referred_notebook_path_changes
+        )
 
     # ------------------------------------------------------------------
     # [idempotency fix] helpers
@@ -300,8 +306,10 @@ class MigrationAnalyzer:
                     )
 
                 if (
-                    container_configured or account_configured
-                ) and bucket_config not in text:
+                    self.enable_bucket_name_declaration
+                    and (container_configured or account_configured)
+                    and bucket_config not in text
+                ) :
                     notes.append(
                         f"Target bucket configuration added using "
                         f"'{self.bucket_variable}'."
@@ -342,7 +350,7 @@ class MigrationAnalyzer:
 
         result.edits = self._dedupe_edits(result.edits)
 
-        if any(
+        if self.enable_bucket_name_declaration and any(
             e.edit_type == "storage_path"
             and "Target bucket configuration added" in e.notes
             for e in result.edits
@@ -690,23 +698,28 @@ class MigrationAnalyzer:
         # becomes:
         #   ${TARGET_WORKSPACE_ROOT}/pfl-repo-dbx-datalake/X
         # ------------------------------------------------------------
-        repo_name = Path(self.source_repo_path).name if self.source_repo_path else ""
-
-        if repo_name:
-            source_prefixes = {
-                f"/Workspace/{repo_name}/",
-                f"{self.source_repo_path}/" if self.source_repo_path else "",
-            }
-            source_prefixes.discard("")
-
-            target_prefix = f"{self.referred_notebook_path_root}/{repo_name}/"
-
-            for line_no, line in enumerate(text.splitlines(), 1):
-                for source_prefix in sorted(source_prefixes, key=len, reverse=True):
-                    # [idempotency fix] a no-op rewrite, or an occurrence that is
-                    # already inside the target prefix, must not be rewritten again.
-                    if source_prefix == target_prefix:
-                        continue
+        if self.enable_referred_notebook_path_changes:
+            repo_name = (
+                Path(self.source_repo_path).name
+                if self.source_repo_path
+                else ""
+            )
+            
+            if repo_name:
+                source_prefixes = {
+                    f"/Workspace/{repo_name}/",
+                    f"{self.source_repo_path}/" if self.source_repo_path else "",
+                }
+                source_prefixes.discard("")
+                
+                target_prefix = f"{self.referred_notebook_path_root}/{repo_name}/"
+                
+                for line_no, line in enumerate(text.splitlines(), 1):
+                    for source_prefix in sorted(source_prefixes, key=len, reverse=True):
+                        # [idempotency fix] a no-op rewrite, or an occurrence that is
+                        # already inside the target prefix, must not be rewritten again.
+                        if source_prefix == target_prefix:
+                            continue
                     if self._has_unmigrated_occurrence(line, source_prefix, target_prefix):
                         result.edits.append(
                             MigrationEdit(
