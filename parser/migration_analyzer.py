@@ -602,6 +602,7 @@ class MigrationAnalyzer:
         # Referred notebook/repository paths
         #
         # Rewrites source repo prefixes to target repo prefixes.
+        # prefixes without duplicating an existing target prfix.
         # Example:
         #   /Workspace/pfl-repo-dbx-datalake/X
         # becomes:
@@ -616,26 +617,34 @@ class MigrationAnalyzer:
             }
             source_prefixes.discard("")
 
-            target_prefix = f"{self.referred_notebook_path_root}/{repo_name}/"
+            target_root = self.referred_notebook_path_root.rstrip("/")
+            target_prefix = f"{target_root}/{repo_name}/"
 
             for line_no, line in enumerate(text.splitlines(), 1):
+
+                if target_prefix in line:
+                    continue
+                    
                 for source_prefix in sorted(source_prefixes, key=len, reverse=True):
-                    if source_prefix in line:
-                        result.edits.append(
-                            MigrationEdit(
-                                notebook=notebook,
-                                edit_type="referred_notebook_path",
-                                original_value=source_prefix,
-                                resolved_value=target_prefix,
-                                line_number=line_no,
-                                notes=(
-                                    "Replaced the hardcoded source workspace repository "
-                                    "prefix with the configured target workspace "
-                                    "repository root."
-                                ),
-                                construct_type="workspace_notebook_path",
-                            )
+                    
+                    if source_prefix not in line:
+                        continue
+                    result.edits.append(
+                        MigrationEdit(
+                            notebook=notebook,
+                            edit_type="referred_notebook_path",
+                            original_value=source_prefix,
+                            resolved_value=target_prefix,
+                            line_number=line_no,
+                            notes=(
+                                "Replaced the hardcoded source workspace repository "
+                                "prefix with the configured target workspace "
+                                "repository root."
+                            ),
+                            construct_type="workspace_notebook_path",
                         )
+                    )
+                    break
         # Add or normalize the environment declaration only when a generated
         # target path actually depends on {env}. Environment selection comes
         # from the process environment, not a Databricks widget.
