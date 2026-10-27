@@ -286,24 +286,6 @@ class MigrationAnalyzer:
                         f"{container} -> {mapping}."
                     )
 
-                elif container_configured and account_configured:
-                    notes.append(
-                        f"Source variables '{container_var}' and "
-                        f"'{account_var}' feed this ABFSS path."
-                    )
-                    replacement = (
-                        f"s3://{{{self.bucket_variable}}}{suffix}"
-                    )
-
-                elif not container_configured and account_configured:
-                    notes.append(
-                        f"Source variable '{account_var}' feeds this "
-                        f"ABFSS path; container '{container}' is hardcoded."
-                    )
-                    replacement = (
-                        f"s3://{{{self.bucket_variable}}}{suffix}"
-                    )
-
                 else:
                     replacement = f"s3://{container}{suffix}"
                     review = True
