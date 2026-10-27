@@ -2,6 +2,15 @@
 
 This module adds the user-driven migration behavior on top of the existing
 UCMP findings. It deliberately does not replace the existing parsers/rules.
+
+Idempotency fix (marked "[idempotency fix]" below)
+--------------------------------------------------
+A path that has already been migrated (for example
+``/Workspace/Deployed-Assets/{env}/PFL/...``) still starts with
+``/Workspace/``, so it used to be treated as a *source* path and re-rooted
+again, producing ``/Workspace/Deployed-Assets/{env}/Deployed-Assets/{env}/PFL/...``.
+Every place that builds a target path from a ``/Workspace/...`` path now skips
+paths that already live under the configured ``workspace_root``.
 """
 from __future__ import annotations
 
@@ -111,7 +120,10 @@ class NotebookMigrationAnalysis:
 
     @property
     def changed(self) -> bool:
-        return bool(self.edits)
+        # [idempotency fix] An edit whose resolved value equals its original
+        # (e.g. "env_config_existing") changes nothing, so it must not make a
+        # notebook look "changed" on a re-run.
+        return any(e.original_value != e.resolved_value for e in self.edits)
 
     @property
     def requires_review(self) -> bool:
@@ -148,6 +160,44 @@ class MigrationAnalyzer:
         ).rstrip("/")
         self.source_repo_path = str(source_repo_path or "").strip().rstrip("/")
         self.bucket_variable = bucket_variable or "bucket_name"
+
+    # ------------------------------------------------------------------
+    # [idempotency fix] helpers
+    # ------------------------------------------------------------------
+    def _already_target(self, path: str) -> bool:
+        """
+        True when ``path`` already lives under the configured workspace root,
+        i.e. it was produced by a previous run and must not be re-rooted.
+
+        The comparison is case-sensitive on purpose: path case is never folded.
+        """
+        root = self.workspace_root.rstrip("/")
+        return bool(root) and (path == root or path.startswith(root + "/"))
+
+    @staticmethod
+    def _has_unmigrated_occurrence(line: str, source_prefix: str, target_prefix: str) -> bool:
+        """
+        True if ``source_prefix`` occurs in ``line`` somewhere that is NOT
+        already inside a ``target_prefix`` occurrence. Stops the referred-path
+        rule from firing again on text it has already rewritten.
+        """
+        target_spans = []
+        start = 0
+        while True:
+            idx = line.find(target_prefix, start)
+            if idx == -1:
+                break
+            target_spans.append((idx, idx + len(target_prefix)))
+            start = idx + 1
+
+        start = 0
+        while True:
+            idx = line.find(source_prefix, start)
+            if idx == -1:
+                return False
+            if not any(lo <= idx < hi for lo, hi in target_spans):
+                return True
+            start = idx + 1
 
     def analyze(self, notebook: str, text: str) -> NotebookMigrationAnalysis:
         result = NotebookMigrationAnalysis(notebook=notebook)
@@ -293,9 +343,8 @@ class MigrationAnalyzer:
                     construct_type="target_storage_config",
                 )
             )
-    
 
-    # ------------------------------------------------------------
+        # ------------------------------------------------------------
         # %run workspace paths
         #
         # Handles:
@@ -306,7 +355,7 @@ class MigrationAnalyzer:
         #
         # Also flags malformed/orphan cases:
         #   # MAGIC %run
-        #   # MAGIC %run 
+        #   # MAGIC %run
         #
         # Also handles split Databricks magic:
         #   # MAGIC %run
@@ -335,6 +384,11 @@ class MigrationAnalyzer:
             matched_run_lines.add(line_number)
 
             if re.match(r"(?i)^/workspace/", raw):
+                # [idempotency fix] already migrated: nothing to do. The line is
+                # already in matched_run_lines so it is not reported as unparsed.
+                if self._already_target(raw):
+                    continue
+
                 relative = re.sub(r"(?i)^/workspace/", "", raw)
                 target = f"{self.workspace_root.rstrip('/')}/{relative}"
 
@@ -432,6 +486,10 @@ class MigrationAnalyzer:
             matched_run_lines.add(next_line_number)
 
             if re.match(r"(?i)^/workspace/", raw_candidate):
+                # [idempotency fix] already migrated: nothing to do.
+                if self._already_target(raw_candidate):
+                    continue
+
                 relative = re.sub(r"(?i)^/workspace/", "", raw_candidate)
                 target = f"{self.workspace_root.rstrip('/')}/{relative}"
 
@@ -520,7 +578,7 @@ class MigrationAnalyzer:
         #
         # This prevents silent success for:
         #   # MAGIC %run
-        #   # MAGIC %run 
+        #   # MAGIC %run
         #   %run
         for match in ANY_RUN_LINE_RE.finditer(text):
             line_number = text.count("\n", 0, match.start()) + 1
@@ -549,6 +607,11 @@ class MigrationAnalyzer:
         # ------------------------------------------------------------
         for match in NOTEBOOK_RUN_RE.finditer(text):
             raw = match.group("path")
+
+            # [idempotency fix] already migrated: nothing to do.
+            if self._already_target(raw):
+                continue
+
             relative = re.sub(r"(?i)^/workspace/", "", raw)
             target = f"{self.workspace_root.rstrip('/')}/{relative}"
             line_number = text.count("\n", 0, match.start("path")) + 1
@@ -568,8 +631,6 @@ class MigrationAnalyzer:
                 )
             )
 
-        
-
         # ------------------------------------------------------------
         # Workspace paths stored in variables
         # ------------------------------------------------------------
@@ -580,6 +641,11 @@ class MigrationAnalyzer:
                 continue
 
             raw = match.group("path")
+
+            # [idempotency fix] already migrated: nothing to do.
+            if self._already_target(raw):
+                continue
+
             relative = re.sub(r"(?i)^/workspace/", "", raw)
             target = f"{self.workspace_root.rstrip('/')}/{relative}"
 
@@ -602,7 +668,6 @@ class MigrationAnalyzer:
         # Referred notebook/repository paths
         #
         # Rewrites source repo prefixes to target repo prefixes.
-        # prefixes without duplicating an existing target prfix.
         # Example:
         #   /Workspace/pfl-repo-dbx-datalake/X
         # becomes:
@@ -617,34 +682,30 @@ class MigrationAnalyzer:
             }
             source_prefixes.discard("")
 
-            target_root = self.referred_notebook_path_root.rstrip("/")
-            target_prefix = f"{target_root}/{repo_name}/"
+            target_prefix = f"{self.referred_notebook_path_root}/{repo_name}/"
 
             for line_no, line in enumerate(text.splitlines(), 1):
-
-                if target_prefix in line:
-                    continue
-                    
                 for source_prefix in sorted(source_prefixes, key=len, reverse=True):
-                    
-                    if source_prefix not in line:
+                    # [idempotency fix] a no-op rewrite, or an occurrence that is
+                    # already inside the target prefix, must not be rewritten again.
+                    if source_prefix == target_prefix:
                         continue
-                    result.edits.append(
-                        MigrationEdit(
-                            notebook=notebook,
-                            edit_type="referred_notebook_path",
-                            original_value=source_prefix,
-                            resolved_value=target_prefix,
-                            line_number=line_no,
-                            notes=(
-                                "Replaced the hardcoded source workspace repository "
-                                "prefix with the configured target workspace "
-                                "repository root."
-                            ),
-                            construct_type="workspace_notebook_path",
+                    if self._has_unmigrated_occurrence(line, source_prefix, target_prefix):
+                        result.edits.append(
+                            MigrationEdit(
+                                notebook=notebook,
+                                edit_type="referred_notebook_path",
+                                original_value=source_prefix,
+                                resolved_value=target_prefix,
+                                line_number=line_no,
+                                notes=(
+                                    "Replaced the hardcoded source workspace repository "
+                                    "prefix with the configured target workspace "
+                                    "repository root."
+                                ),
+                                construct_type="workspace_notebook_path",
+                            )
                         )
-                    )
-                    break
         # Add or normalize the environment declaration only when a generated
         # target path actually depends on {env}. Environment selection comes
         # from the process environment, not a Databricks widget.
@@ -794,7 +855,6 @@ class MigrationAnalyzer:
             return max(1, min(workspace_lines) - 1)
 
         return 1
-    
 
     @staticmethod
     def _placeholder_name(value: str) -> Optional[str]:
