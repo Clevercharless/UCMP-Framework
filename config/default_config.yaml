@@ -39,8 +39,8 @@ migration:
   notebook_list:
     - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Qlik_Reporting/ABF_Strategic_Alliances_Disbursal_Sales_MIS_Report/Write CSV/write_to_CSV.py"
     - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Qlik_Reporting/ABF_Strategic_Alliances_Disbursal_Sales_MIS_Report/Report/ABF_Strategic_Alliances_Disbursal_Sales_MIS_Report.py"
-    - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCollateralProperty.py"
-    - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Notebook_Execution/CKYC Communication/CKYC_Communication_report"
+    # - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCollateralProperty.py"
+    # - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Notebook_Execution/CKYC Communication/CKYC_Communication_report"
     
   notebook_list_file: ""
   notebook_path_column: "Notebook Path"
