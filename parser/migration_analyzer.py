@@ -267,38 +267,50 @@ class MigrationAnalyzer:
                     list(assignments.keys()),
                 )
 
-                mapping = None if container_configured else self.mapping.get(container.lower())
+                mapping = (
+                    None
+                    if container_configured
+                    else self.mapping.get(container.lower())
+                )
 
                 review = False
                 notes = []
                 suffix = f"/{path}" if path else ""
 
-                if container_configured and account_configured:
+                # Prefer the configured S3 bucket for a known literal container,
+                # regardless of whether the storage account is hardcoded or dynamic.
+                if not container_configured and mapping:
+                    replacement = f"s3://{mapping}{suffix}"
                     notes.append(
-                        f"Source variables '{container_var}' and '{account_var}' "
-                        "feed this ABFSS path."
+                        f"Container-to-bucket mapping used: "
+                        f"{container} -> {mapping}."
                     )
-                    replacement = f"s3://{{{self.bucket_variable}}}{suffix}"
+
+                elif container_configured and account_configured:
+                    notes.append(
+                        f"Source variables '{container_var}' and "
+                        f"'{account_var}' feed this ABFSS path."
+                    )
+                    replacement = (
+                        f"s3://{{{self.bucket_variable}}}{suffix}"
+                    )
 
                 elif not container_configured and account_configured:
                     notes.append(
-                        f"Source variable '{account_var}' feeds this ABFSS path; "
-                        f"container '{container}' is hardcoded."
+                        f"Source variable '{account_var}' feeds this "
+                        f"ABFSS path; container '{container}' is hardcoded."
                     )
-                    replacement = f"s3://{{{self.bucket_variable}}}{suffix}"
-
-                elif not container_configured and not account_configured and mapping:
-                    replacement = f"s3://{mapping}{suffix}"
-                    notes.append(
-                        f"Container-to-bucket mapping used: {container} -> {mapping}."
+                    replacement = (
+                        f"s3://{{{self.bucket_variable}}}{suffix}"
                     )
 
                 else:
                     replacement = f"s3://{container}{suffix}"
                     review = True
                     notes.append(
-                        f"No container-to-bucket mapping found for '{container}'; "
-                        "mechanical S3 placeholder applied and manual verification required."
+                        f"No container-to-bucket mapping found for "
+                        f"'{container}'; mechanical S3 placeholder "
+                        "applied and manual verification required."
                     )
 
                 if (
