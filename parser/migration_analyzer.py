@@ -56,9 +56,9 @@ MAGIC_CONTINUATION_RE = re.compile(
     r"^\s*#\s*MAGIC\s+(?P<value>.+?)\s*$"
 )
 
-# CONFIG_IDENTIFIER_RENAMES = {
-#     "output_container_path": "output_bucket_name",
-# }
+CONFIG_IDENTIFIER_RENAMES = {
+    "output_container_path": "output_container_path",
+}
 
 
 DYNAMIC_RUN_RE = re.compile(
