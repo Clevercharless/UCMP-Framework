@@ -1,42 +1,26 @@
-# ------------------------------------------------------------
-# Referred notebook/repository paths
-# Disabled by default; enable when needed.
-# ------------------------------------------------------------
-if self.enable_referred_notebook_path_changes:
-    repo_name = (
-        Path(self.source_repo_path).name
-        if self.source_repo_path
-        else ""
-    )
+# Ensure environment configuration exists in every notebook
+env_os_assignment = re.search(
+    r"(?m)^\s*env\s*=\s*(?:os\.getenv|os\.environ\.get)\s*\(",
+    text,
+)
 
-    if repo_name:
-        source_prefixes = {
-            f"/Workspace/{repo_name}/",
-            f"{self.source_repo_path}/" if self.source_repo_path else "",
-        }
-        source_prefixes.discard("")
-
-        target_prefix = (
-            f"{self.referred_notebook_path_root}/{repo_name}/"
+if env_os_assignment:
+    # Environment assignment already exists.
+    # Add only the import statement.
+    result.edits.append(
+        MigrationEdit(
+            edit_type="add_target_config",
+            resolved_value="import os",
+            line_number=1,
         )
-
-        for line_no, line in enumerate(text.splitlines(), 1):
-            for source_prefix in sorted(
-                source_prefixes, key=len, reverse=True
-            ):
-                if source_prefix in line:
-                    result.edits.append(
-                        MigrationEdit(
-                            notebook=notebook,
-                            edit_type="referred_notebook_path",
-                            original_value=source_prefix,
-                            resolved_value=target_prefix,
-                            line_number=line_no,
-                            notes=(
-                                "Replaced the hardcoded source workspace "
-                                "repository prefix with the configured "
-                                "target workspace repository root."
-                            ),
-                            construct_type="workspace_notebook_path",
-                        )
-                    )
+    )
+else:
+    # No environment assignment exists.
+    # Add both lines.
+    result.edits.append(
+        MigrationEdit(
+            edit_type="add_target_config",
+            resolved_value='import os\nenv = os.getenv("env")',
+            line_number=1,
+        )
+    )
