@@ -742,79 +742,17 @@ class MigrationAnalyzer:
                                 construct_type="workspace_notebook_path",
                             )
                         )
-        # Ensure every notebook has an environment declaration. This is
-        # intentionally unconditional so notebooks without migrated {env} paths
-        # are also standardized for future migrations.
-        insert_at = self._env_insert_location(assignments, result.edits)
-        env_widget = re.compile(
-            r"^(?P<indent>\s*)env\s*=\s*dbutils\.widgets\.get\(\s*([\"'])env\2\s*\)\s*$"
+        result.edit.append(
+            MigrationEdit(
+                notebook=notebook,
+                edit_type="add_target_config",
+                original_value= "",
+                resolved_value = 'import os\nenv = os.getenve("ENV", "dev")',
+                line_number = 1,
+                notes = "Added import os and env configuration.",
+                construct_type = "target_environment_config",
+            )
         )
-        env_os_declaration = re.compile(
-            r"^\s*env\s*=\s*(?:os\.getenv\(|os\.environ\.get\()"
-        )
-        env_assignment = None
-        existing_env_os = None
-        for line_number, line in enumerate(text.splitlines(), 1):
-            if env_widget.match(line):
-                env_assignment = (line_number, line)
-                break
-            if env_os_declaration.match(line) and existing_env_os is None:
-                existing_env_os = (line_number, line)
-
-        os_import_lines = [
-            line_number
-            for line_number, line in enumerate(text.splitlines(), 1)
-            if re.match(r"^\s*(?:import\s+os\b|from\s+os\s+import\b)", line)
-        ]
-
-        if env_assignment:
-            line_number, original_line = env_assignment
-            replacement = 'env = os.getenv("ENV", "dev")'
-            # An import later in the notebook does not help this assignment at runtime.
-            if not any(import_line < line_number for import_line in os_import_lines):
-                replacement = 'import os\nenv = os.getenv("ENV", "dev")'
-            result.edits.append(
-                MigrationEdit(
-                    notebook=notebook,
-                    edit_type="env_config_replace",
-                    original_value=original_line,
-                    resolved_value=replacement,
-                    line_number=line_number,
-                    notes="Standardized the environment configuration to os.getenv.",
-                    construct_type="target_environment_config",
-                )
-            )
-        elif existing_env_os:
-            env_line_number, existing_env_line = existing_env_os
-            replacement = 'env = os.getenv("ENV", "dev")'
-            if not any(import_line < env_line_number for import_line in os_import_lines):
-                replacement = 'import os\n' + replacement
-            result.edits.append(
-                MigrationEdit(
-                    notebook=notebook,
-                    edit_type="env_config_replace",
-                    original_value=existing_env_line,
-                    resolved_value=replacement,
-                    line_number=env_line_number,
-                    notes="Standardized the environment declaration and ensured os is imported.",
-                    construct_type="target_environment_config",
-                )
-            )
-        else:
-            config = 'env = os.getenv("ENV", "dev")'
-            if not any(import_line < insert_at for import_line in os_import_lines):
-                config = 'import os\n' + config
-            result.edits.append(
-                MigrationEdit(
-                    notebook=notebook,
-                    edit_type="add_target_config",
-                    original_value="",
-                    resolved_value=config,
-                    line_number=insert_at,
-                    notes="Added environment configuration using os.getenv to this notebook.",
-                    construct_type="target_environment_config",
-                )
-            )
 
         # Comment out the legacy raw_sa_name widget assignment in every notebook
         # where it is present. Do not add a duplicate edit for an already-commented line.
