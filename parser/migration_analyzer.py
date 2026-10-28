@@ -742,7 +742,7 @@ class MigrationAnalyzer:
                                 construct_type="workspace_notebook_path",
                             )
                         )
-        result.edit.append(
+        result.edits.append(
             MigrationEdit(
                 notebook=notebook,
                 edit_type="add_target_config",
