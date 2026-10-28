@@ -229,7 +229,7 @@ class MigrationAnalyzer:
             f'{self.bucket_variable} = dbutils.widgets.get("{self.bucket_variable}")'
         )
         env_variable = "env"
-        env_config = 'env = os.getenv("ENV","dev")'
+        env_config = 'import os\nenv = os.getenv("ENV","dev")'
 
         # ------------------------------------------------------------
         # ABFSS storage paths
@@ -901,7 +901,7 @@ class MigrationAnalyzer:
         stripped = line.lstrip()
         indent = line[: len(line) - len(stripped)]
 
-        return f"{indent}# UCMP SOURCE CONFIG COMMENTED: {stripped}"
+        return f"{indent}# {stripped}"
 
     @staticmethod
     def _bucket_insert_location(edits: List[MigrationEdit], text: str) -> int:
