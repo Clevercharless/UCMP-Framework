@@ -72,7 +72,7 @@ class DeploymentEngine(PipelineStage):
         target_cfg = context.config.get("target", {}) or {}
         source_mode = str(source_cfg.get("source_mode", "local_repo")).strip().lower()
         target_root = Path(replacement_summary["target_repo_path"])
-         = validation_report["overall_status"]
+        validation_status = validation_report["overall_status"]
         deployment_cfg = context.config.get("deployment", {}) or {}
         auto_deploy = bool(deployment_cfg.get("auto_deploy", False))
         dry_run = bool(context.config.get("pipeline", {}).get("dry_run", True))
