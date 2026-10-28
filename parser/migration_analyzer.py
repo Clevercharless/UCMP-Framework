@@ -14,6 +14,20 @@ paths that already live under a configured root (``workspace_root`` or
 ``referred_notebook_path_root``). The referred-repository rule is guarded too:
 a source prefix such as ``/Workspace/Deployed-Assets/`` no longer matches the
 start of an already-migrated ``/Workspace/Deployed-Assets/{env}/...`` path.
+
+Notebook-run / raw_sa_name / environment changes (marked "[env update]")
+------------------------------------------------------------------------
+1. ``dbutils.notebook.run(...)``: when the migrated path contains ``{env}`` the
+   string literal must be an f-string so Python substitutes the environment at
+   run time. The ``f`` prefix is added when missing and preserved when present;
+   other braces coming from the workspace root are escaped (``{{ }}``) so only
+   ``{env}`` is interpolated.
+2. ``raw_sa_name``: its widget declaration is always commented out, wherever it
+   appears (not only when it feeds a migrated ABFSS path).
+3. Every Python notebook gets ``import os`` and ``env = os.getenv("ENV", "dev")``
+   without duplicating an existing declaration. An existing ``env = ...`` lookup
+   is standardised to that exact line, and ``import os`` is guaranteed to come
+   before it even if the notebook imports ``os`` later.
 """
 from __future__ import annotations
 
@@ -25,6 +39,16 @@ from typing import Dict, List, Optional
 
 
 logger = logging.getLogger(__name__)
+
+
+# [env update] canonical environment configuration
+ENV_PLACEHOLDER = "{env}"
+IMPORT_OS = "import os"
+ENV_DECLARATION = 'env = os.getenv("ENV", "dev")'
+ENV_CONFIG_BLOCK = f"{IMPORT_OS}\n{ENV_DECLARATION}"
+
+# [env update] widget variables whose declaration is ALWAYS commented out
+ALWAYS_COMMENT_WIDGET_VARIABLES = ("raw_sa_name",)
 
 
 ABFSS_RE = re.compile(
@@ -82,12 +106,30 @@ ASSIGN_RE = re.compile(
 )
 
 
+# [env update] the optional string prefix (f / r / u ...) is captured so an
+# existing f-string path is still detected and its prefix preserved.
 NOTEBOOK_RUN_RE = re.compile(
     r"dbutils\.notebook\.run\s*\(\s*"
-    r"(?P<quote>[\"'])"
+    r"(?P<prefix>[rRfFuU]{0,2})(?P<quote>[\"'])"
     r"(?P<path>/Workspace/[^\"']+)"
     r"(?P=quote)",
     re.IGNORECASE | re.DOTALL,
+)
+
+
+# [env update] environment declaration detection
+ENV_ASSIGN_RE = re.compile(r"^(?P<indent>[ \t]*)env\s*=(?!=)")
+ENV_RECOGNISED_RE = re.compile(
+    r"^(?P<indent>[ \t]*)env\s*=\s*(?:"
+    r"dbutils\s*\.\s*widgets\s*\.\s*get\s*\(.*\)"
+    r"|os\s*\.\s*getenv\s*\(.*\)"
+    r"|os\s*\.\s*environ\s*\.\s*get\s*\(.*\)"
+    r"|os\s*\.\s*environ\s*\[.*\]"
+    r")\s*$"
+)
+# top-level `import os`, `import os.path`, `import sys, os` (NOT `import os as x`)
+OS_IMPORT_RE = re.compile(
+    r"^import\s+(?:[A-Za-z_][\w.]*\s*,\s*)*os(?:\.[A-Za-z_][\w.]*)?\s*(?:,.*)?(?:#.*)?$"
 )
 
 
@@ -124,7 +166,7 @@ class NotebookMigrationAnalysis:
     @property
     def changed(self) -> bool:
         # [idempotency fix] An edit whose resolved value equals its original
-        # (e.g. "env_config_existing") changes nothing, so it must not make a
+        # (e.g. a no-op rename) changes nothing, so it must not make a
         # notebook look "changed" on a re-run.
         return any(e.original_value != e.resolved_value for e in self.edits)
 
@@ -218,6 +260,116 @@ class MigrationAnalyzer:
                 return True
             start = idx + 1
 
+    # ------------------------------------------------------------------
+    # [env update] helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _fstring_escape(text: str) -> str:
+        """Escape braces for use inside an f-string, keeping ``{env}`` interpolated."""
+        parts = text.split(ENV_PLACEHOLDER)
+        return ENV_PLACEHOLDER.join(p.replace("{", "{{").replace("}", "}}") for p in parts)
+
+    @staticmethod
+    def _is_python_notebook(notebook: str, text: str) -> bool:
+        """``import os`` / ``env = ...`` are only valid in Python notebooks."""
+        first = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+        if first.startswith(("-- Databricks notebook source", "// Databricks notebook source")):
+            return False
+        return Path(str(notebook)).suffix.lower() not in {".sql", ".scala", ".r"}
+
+    def _add_environment_edits(
+        self,
+        result: NotebookMigrationAnalysis,
+        notebook: str,
+        text: str,
+        assignments: Dict[str, dict],
+    ) -> None:
+        """
+        Ensure the notebook has ``import os`` and ``env = os.getenv("ENV", "dev")``.
+
+        * no ``env`` declaration  -> one ``add_target_config`` block (import + env)
+        * recognised ``env = ...`` lookup (widget / os.getenv / os.environ) ->
+          standardised in place; ``import os`` is put directly above it unless a
+          top-level ``import os`` already appears BEFORE it
+        * ``env = <something else>`` -> left untouched and reported for review
+        * already canonical and imported first -> nothing to do (idempotent)
+        """
+        lines = text.splitlines()
+
+        os_import_line = next(
+            (i for i, ln in enumerate(lines, 1) if OS_IMPORT_RE.match(ln)), None
+        )
+        recognised = [(i, ln) for i, ln in enumerate(lines, 1) if ENV_RECOGNISED_RE.match(ln)]
+        unrecognised = [
+            (i, ln) for i, ln in enumerate(lines, 1)
+            if ENV_ASSIGN_RE.match(ln) and not ENV_RECOGNISED_RE.match(ln)
+        ]
+
+        if recognised:
+            first_line = recognised[0][0]
+            import_precedes = os_import_line is not None and os_import_line < first_line
+
+            # Identical source lines are replaced identically (the engine replaces
+            # by value), so decide once per distinct line text, earliest wins.
+            resolved_for: Dict[str, str] = {}
+            for index, (line_no, line) in enumerate(recognised):
+                if line in resolved_for:
+                    continue
+                indent = ENV_RECOGNISED_RE.match(line).group("indent")
+                declaration = f"{indent}{ENV_DECLARATION}"
+                need_import = index == 0 and not import_precedes
+                resolved_for[line] = f"{indent}{IMPORT_OS}\n{declaration}" if need_import else declaration
+
+            for line_no, line in recognised:
+                resolved = resolved_for[line]
+                if resolved == line:
+                    continue  # already canonical and correctly ordered
+                result.edits.append(
+                    MigrationEdit(
+                        notebook=notebook,
+                        edit_type="env_config_replace",
+                        original_value=line,
+                        resolved_value=resolved,
+                        line_number=line_no,
+                        notes=(
+                            "Standardised the env declaration to os.getenv(\"ENV\", \"dev\")"
+                            + ("; added the os import before it." if IMPORT_OS in resolved else ".")
+                        ),
+                        construct_type="target_environment_config",
+                    )
+                )
+            return
+
+        if unrecognised:
+            line_no, line = unrecognised[0]
+            result.review_items.append(
+                {
+                    "notebook": notebook,
+                    "line_number": line_no,
+                    "construct_type": "target_environment_config",
+                    "original_value": "env = ...",
+                    "notes": (
+                        "'env' is assigned in a form this analyzer does not standardise "
+                        "(not a widget / os.getenv / os.environ lookup). It was left "
+                        "unchanged and no second declaration was added. Manual review required."
+                    ),
+                    "requires_manual_review": True,
+                }
+            )
+            return
+
+        result.edits.append(
+            MigrationEdit(
+                notebook=notebook,
+                edit_type="add_target_config",
+                original_value="",
+                resolved_value=ENV_CONFIG_BLOCK,
+                line_number=self._env_insert_location(assignments, result.edits),
+                notes="Added target environment configuration (import os + env = os.getenv).",
+                construct_type="target_environment_config",
+            )
+        )
+
     def analyze(self, notebook: str, text: str) -> NotebookMigrationAnalysis:
         result = NotebookMigrationAnalysis(notebook=notebook)
         for i, line in enumerate(text.splitlines(), 1):
@@ -228,8 +380,6 @@ class MigrationAnalyzer:
         bucket_config = (
             f'{self.bucket_variable} = dbutils.widgets.get("{self.bucket_variable}")'
         )
-        env_variable = "env"
-        env_config = 'import os\nenv = os.getenv("ENV","dev")'
 
         # ------------------------------------------------------------
         # ABFSS storage paths
@@ -337,6 +487,27 @@ class MigrationAnalyzer:
                                 construct_type="source_storage_config",
                             )
                         )
+
+        # [env update] Widget declarations that are ALWAYS commented out
+        # (raw_sa_name), whether or not a migrated ABFSS path uses them. Every
+        # declaration is handled, not only the last one per name.
+        for line_no, line in enumerate(text.splitlines(), 1):
+            declared = ASSIGN_RE.match(line)
+            if declared and declared.group("name") in ALWAYS_COMMENT_WIDGET_VARIABLES:
+                result.edits.append(
+                    MigrationEdit(
+                        notebook=notebook,
+                        edit_type="comment_source_config",
+                        original_value=line,
+                        resolved_value=self._comment_line(line),
+                        line_number=line_no,
+                        notes=(
+                            f"Commented per migration rule: the '{declared.group('name')}' "
+                            "widget declaration is always commented out."
+                        ),
+                        construct_type="source_storage_config",
+                    )
+                )
 
         result.edits = self._dedupe_edits(result.edits)
 
@@ -619,6 +790,12 @@ class MigrationAnalyzer:
 
         # ------------------------------------------------------------
         # dbutils.notebook.run() workspace paths
+        #
+        # [env update] When the migrated path contains {env} the literal must be
+        # an f-string. The f prefix is added if missing and preserved if present;
+        # other braces from the workspace root are escaped so only {env} is
+        # interpolated. Everything else in the call (timeout, arguments) is left
+        # exactly as written.
         # ------------------------------------------------------------
         for match in NOTEBOOK_RUN_RE.finditer(text):
             raw = match.group("path")
@@ -628,20 +805,61 @@ class MigrationAnalyzer:
                 continue
 
             relative = re.sub(r"(?i)^/workspace/", "", raw)
-            target = f"{self.workspace_root.rstrip('/')}/{relative}"
+            root = self.workspace_root.rstrip("/")
             line_number = text.count("\n", 0, match.start("path")) + 1
+
+            prefix = match.group("prefix")
+            quote = match.group("quote")
+            is_fstring = "f" in prefix.lower()
+            needs_fstring = ENV_PLACEHOLDER in root
+
+            original = raw
+            resolved = f"{root}/{relative}"
+            notes = (
+                "Converted hardcoded source workspace notebook reference "
+                "to the configured target workspace root."
+            )
+
+            if is_fstring:
+                # Already an f-string: keep the prefix; the source path's own
+                # placeholders stay as written; escape the root's other braces.
+                resolved = f"{self._fstring_escape(root)}/{relative}"
+                notes += " The existing f-string prefix was preserved."
+            elif needs_fstring:
+                if prefix.lower() not in ("", "r"):
+                    result.review_items.append(
+                        {
+                            "notebook": notebook,
+                            "line_number": line_number,
+                            "construct_type": "workspace_notebook_path",
+                            "original_value": raw,
+                            "notes": (
+                                "The migrated path contains {env} but this string literal "
+                                f"(prefix '{prefix}') cannot be converted to an f-string. "
+                                "Manual review required."
+                            ),
+                            "requires_manual_review": True,
+                        }
+                    )
+                    continue
+                # One edit spanning `dbutils.notebook.run(` .. opening quote .. path,
+                # so the f prefix and the new path are applied together.
+                head = text[match.start():match.start("prefix")]
+                original = f"{head}{prefix}{quote}{raw}"
+                resolved = (
+                    f"{head}{prefix}f{quote}"
+                    f"{self._fstring_escape(root)}/{self._fstring_escape(relative)}"
+                )
+                notes += " The string was made an f-string so {env} is substituted at run time."
 
             result.edits.append(
                 MigrationEdit(
                     notebook=notebook,
                     edit_type="workspace_notebook_run_path",
-                    original_value=raw,
-                    resolved_value=target,
+                    original_value=original,
+                    resolved_value=resolved,
                     line_number=line_number,
-                    notes=(
-                        "Converted hardcoded source workspace notebook reference "
-                        "to the configured target workspace root."
-                    ),
+                    notes=notes,
                     construct_type="workspace_notebook_path",
                 )
             )
@@ -721,86 +939,15 @@ class MigrationAnalyzer:
                                 construct_type="workspace_notebook_path",
                             )
                         )
-        # Add or normalize the environment declaration only when a generated
-        # target path actually depends on {env}. Environment selection comes
-        # from the process environment, not a Databricks widget.
-        if any("{env}" in str(edit.resolved_value) for edit in result.edits):
-            insert_at = self._env_insert_location(assignments, result.edits)
-            env_widget = re.compile(
-                r"^(?P<indent>\s*)env\s*=\s*dbutils\.widgets\.get\(\s*([\"'])env\2\s*\)\s*$"
-            )
-            env_os_declaration = re.compile(
-                r"^\s*env\s*=\s*(?:os\.getenv\(|os\.environ\.get\()"
-            )
-            env_assignment = None
-            for line_number, line in enumerate(text.splitlines(), 1):
-                if env_widget.match(line):
-                    env_assignment = (line_number, line)
-                    break
 
-            has_os_import = bool(re.search(r"(?m)^\s*(?:import\s+os\b|from\s+os\s+import\b)", text))
-            has_env_os_declaration = any(
-                env_os_declaration.match(line) for line in text.splitlines()
-            )
-
-            # `os.getenv` requires the os module. Insert its import separately
-            # so the config cell stays valid and the declaration is idempotent.
-            if not has_os_import:
-                result.edits.append(
-                    MigrationEdit(
-                        notebook=notebook,
-                        edit_type="add_target_config",
-                        original_value="",
-                        resolved_value="import os",
-                        line_number=insert_at,
-                        notes="Added the os import required by environment lookup.",
-                        construct_type="target_environment_config",
-                    )
-                )
-
-            if env_assignment:
-                line_number, original_line = env_assignment
-                result.edits.append(
-                    MigrationEdit(
-                        notebook=notebook,
-                        edit_type="env_config_replace",
-                        original_value=original_line,
-                        resolved_value=env_config,
-                        line_number=line_number,
-                        notes="Replaced the env Databricks widget lookup with os.getenv.",
-                        construct_type="target_environment_config",
-                    )
-                )
-            elif has_env_os_declaration:
-                existing_env_line = next(
-                    line for line in text.splitlines() if env_os_declaration.match(line)
-                )
-                result.edits.append(
-                    MigrationEdit(
-                        notebook=notebook,
-                        edit_type="env_config_existing",
-                        original_value=existing_env_line,
-                        resolved_value=existing_env_line,
-                        line_number=next(
-                            i for i, line in enumerate(text.splitlines(), 1)
-                            if env_os_declaration.match(line)
-                        ),
-                        notes="Environment declaration already uses os.getenv/os.environ.get.",
-                        construct_type="target_environment_config",
-                    )
-                )
-            else:
-                result.edits.append(
-                    MigrationEdit(
-                        notebook=notebook,
-                        edit_type="add_target_config",
-                        original_value="",
-                        resolved_value=env_config,
-                        line_number=insert_at,
-                        notes="Added target environment configuration using os.getenv.",
-                        construct_type="target_environment_config",
-                    )
-                )
+        # ------------------------------------------------------------
+        # [env update] Environment configuration for EVERY Python notebook:
+        #   import os
+        #   env = os.getenv("ENV", "dev")
+        # (not only when a generated path contains {env})
+        # ------------------------------------------------------------
+        if self._is_python_notebook(notebook, text):
+            self._add_environment_edits(result, notebook, text, assignments)
 
         # ------------------------------------------------------------
         # Config identifier renames
