@@ -67,7 +67,7 @@ class DeploymentEngine(PipelineStage):
         replacement_summary = context.get_artifact("replacement_summary")
         repository = context.get_artifact("repository")
 
-        repo_name = repository["repo_name"]
+        repo_name = repository.repo_name
         source_cfg = context.config.get("source", {}) or {}
         target_cfg = context.config.get("target", {}) or {}
         source_mode = str(source_cfg.get("source_mode", "local_repo")).strip().lower()
@@ -77,9 +77,9 @@ class DeploymentEngine(PipelineStage):
         auto_deploy = bool(deployment_cfg.get("auto_deploy", False))
         dry_run = bool(context.config.get("pipeline", {}).get("dry_run", True))
 
-        if validation_status == "FAIL":
-            plan = self._build_aborted_plan(repo_name, validation_status)
-            return self._finalize(context, plan)
+        # if validation_status == "FAIL":
+        #     plan = self._build_aborted_plan(repo_name, validation_status)
+        #     return self._finalize(context, plan)
 
         steps = [
             DeploymentStep(

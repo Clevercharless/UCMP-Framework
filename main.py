@@ -44,7 +44,7 @@ def build_pipeline(config_path: Optional[str], force_deploy: bool) -> Orchestrat
     stages = [
         ConfigurationManager(config_path=config_path, env=env),
         auth_manager,
-        RepositoryManager(token_store=auth_manager.token_store),
+        RepositoryManager(),
         ParserEngine(),
         rule_repository,
         RuleService(rule_repository=rule_repository),

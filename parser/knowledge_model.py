@@ -26,7 +26,7 @@ from parser.dependency_extractor import NotebookDependency
 from parser.dependency_graph import DependencyGraphSummary
 from parser.magic_parser import MagicCommand
 from parser.migration_analyzer import NotebookMigrationAnalysis
-from parser.regex_parser import AzureConstruct, AzureConstructType
+from parser.regex_parser import AzureConstruct, AzureConstructType, GeneralConstruct
 from parser.sql_parser import SQLFindings
 
 _RULE_CATEGORY_HINTS = {
@@ -58,6 +58,7 @@ class NotebookParseResult:
     cell_count: int
     magic_commands: List[MagicCommand] = field(default_factory=list)
     azure_constructs: List[AzureConstruct] = field(default_factory=list)
+    general_constructs: List[GeneralConstruct] = field(default_factory=list)
     ast_findings: Optional[ASTFindings] = None
     sql_findings: Optional[SQLFindings] = None
     parse_error: Optional[str] = None
@@ -70,6 +71,10 @@ class MigrationKnowledgeModel:
     notebook_metadata: List[Dict] = field(default_factory=list)
     dependencies: Dict = field(default_factory=dict)
     azure_constructs: List[Dict] = field(default_factory=list)
+    database_connections: List[Dict] = field(default_factory=list)
+    secret_references: List[Dict] = field(default_factory=list)
+    credential_findings: List[Dict] = field(default_factory=list)
+    general_constructs: List[Dict] = field(default_factory=list)
     configuration_references: List[Dict] = field(default_factory=list)
     transformation_candidates: List[Dict] = field(default_factory=list)
     business_objects: List[Dict] = field(default_factory=list)
@@ -82,6 +87,10 @@ class MigrationKnowledgeModel:
             "notebook_metadata": self.notebook_metadata,
             "dependencies": self.dependencies,
             "azure_constructs": self.azure_constructs,
+            "database_connections": self.database_connections,
+            "secret_references": self.secret_references,
+            "credential_findings": self.credential_findings,
+            "general_constructs": self.general_constructs,
             "configuration_references": self.configuration_references,
             "transformation_candidates": self.transformation_candidates,
             "business_objects": self.business_objects,
@@ -114,6 +123,14 @@ class KnowledgeModelGenerator:
             for construct in result.azure_constructs
         ]
         model.azure_constructs = self._aggregate_constructs(all_constructs)
+        model.general_constructs = self._aggregate_general_constructs(notebook_results)
+        model.database_connections = self._aggregate_ast_section(notebook_results, "database_connections")
+        model.secret_references = self._aggregate_ast_section(notebook_results, "secret_references")
+        model.credential_findings = self._aggregate_ast_section(notebook_results, "credential_findings")
+        # Regex URL detection remains available even if Python AST parsing fails or
+        # the URL occurs in a comment/SQL string rather than a Python call.
+        self._merge_regex_jdbc_findings(model.database_connections, notebook_results)
+        self._merge_regex_secret_findings(model.secret_references, notebook_results)
         model.configuration_references = self._build_configuration_references(all_constructs)
         model.transformation_candidates = self._build_transformation_candidates(all_constructs)
         model.business_objects = self._build_business_objects(notebook_results)
@@ -125,6 +142,73 @@ class KnowledgeModelGenerator:
 
     # -- section builders -----------------------------------------------
 
+    def _aggregate_general_constructs(self, results: List[NotebookParseResult]) -> List[Dict]:
+        output = []
+        seen = set()
+        for result in results:
+            for finding in result.general_constructs:
+                item = finding.to_dict()
+                item["notebook"] = result.relative_path
+                key = (item["notebook"], item["category"], item["value"], item["line_number"])
+                if key not in seen:
+                    seen.add(key)
+                    output.append(item)
+        return sorted(output, key=lambda item: (item["notebook"], item["line_number"], item["category"]))
+
+    def _aggregate_ast_section(self, results: List[NotebookParseResult], section: str) -> List[Dict]:
+        output = []
+        seen = set()
+        for result in results:
+            if not result.ast_findings:
+                continue
+            for finding in getattr(result.ast_findings, section, []):
+                item = dict(finding)
+                item["notebook"] = result.relative_path
+                key = (result.relative_path, section, tuple(sorted((k, str(v)) for k, v in item.items() if k != "notebook")))
+                if key not in seen:
+                    seen.add(key)
+                    output.append(item)
+        return sorted(output, key=lambda item: (item["notebook"], item.get("line_number", 0)))
+
+    def _merge_regex_jdbc_findings(self, connections: List[Dict], results: List[NotebookParseResult]) -> None:
+        seen = {(item.get("notebook"), item.get("url")) for item in connections}
+        for result in results:
+            for finding in result.general_constructs:
+                if finding.category != "jdbc_url":
+                    continue
+                key = (result.relative_path, finding.value)
+                if key in seen:
+                    continue
+                seen.add(key)
+                jdbc_lower = finding.value.lower()
+                connection_type = next((name for name in ("mysql", "postgresql", "sqlserver", "oracle", "mariadb", "redshift", "db2", "snowflake") if f"jdbc:{name}:" in jdbc_lower), "jdbc_unknown")
+                connections.append({
+                    "notebook": result.relative_path,
+                    "connection_type": connection_type,
+                    "detection_method": "regex_jdbc_url",
+                    "line_number": finding.line_number,
+                    "url": finding.value,
+                })
+
+    def _merge_regex_secret_findings(self, secrets: List[Dict], results: List[NotebookParseResult]) -> None:
+        seen = {(item.get("notebook"), item.get("line_number")) for item in secrets}
+        for result in results:
+            for finding in result.general_constructs:
+                if finding.category != "secret_retrieval_api":
+                    continue
+                key = (result.relative_path, finding.line_number)
+                if key in seen:
+                    continue
+                seen.add(key)
+                secrets.append({
+                    "notebook": result.relative_path,
+                    "api": "dbutils.secrets.get",
+                    "line_number": finding.line_number,
+                    "scope": None,
+                    "key": None,
+                    "detection_method": "regex_fallback",
+                })
+
     def _build_notebook_metadata(self, results: List[NotebookParseResult]) -> List[Dict]:
         metadata = []
         for result in results:
@@ -135,6 +219,10 @@ class KnowledgeModelGenerator:
                 "cell_count": result.cell_count,
                 "magic_command_count": len(result.magic_commands),
                 "azure_construct_count": len(result.azure_constructs),
+                "general_construct_count": len(result.general_constructs),
+                "database_connection_count": len(result.ast_findings.database_connections) if result.ast_findings else 0,
+                "secret_reference_count": len(result.ast_findings.secret_references) if result.ast_findings else 0,
+                "credential_finding_count": len(result.ast_findings.credential_findings) if result.ast_findings else 0,
                 "parse_error": result.parse_error,
                 "migration_classification": "CHANGED" if result.migration_analysis and result.migration_analysis.changed else "NO_CHANGE",
                 "review_required": bool(result.migration_analysis and result.migration_analysis.requires_review),
