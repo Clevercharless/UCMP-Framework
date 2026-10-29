@@ -1,42 +1,94 @@
-# Validation Report
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/FACT/CCA_FactApplication
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/FACT/CCA_FactLoanRepaymentSchedule
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/FACT/CCA_FactLoanClearanceReceipts
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/FACT/CCA_FactLoanClosures
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/FACT/CCA_FactLoanDPDDetails
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/FACT/CCA_FactLoanDisbursements
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/FACT/CCA_FactLoan
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/FACT/CCA_FactLoanDisbursementPayments
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimCollateralProperty
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimCustomer
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimBusinessPartner
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimProduct
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimCustomerEmail
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimScheme
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimCollateralMaster
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimCustomerPhone
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimBridgeLoanCustomer
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimCustomerEducation
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimBridgeLoanCollateral
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimCollateralAsset
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimCustomerIdentificationDetail
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimBranch
+/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimCustomerAddress
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimBusinessPartner
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimBranch
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/Finnone_DimCustomerIdentificationDetail
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/Finnone_DimBridgeLoanCustomer
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCollateralProperty
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/Finnone_DimBridgeLoanCollateral
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/Finnone_DimCollateralAsset
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCollateralMaster
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCustomerAddress
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimProduct
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCustomer
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCustomerPhone
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimScheme
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCustomerEducation
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/FinnOne_DimCustomerEmail
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/DIM/Finnone_DimCustomerOccupation
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactLoanDPDDetails
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactLoan
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactLoanClearanceReceipts
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactLoanGSTTransactionDetails
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactApplication
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactLoanReceiptAllocations
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactLoanBillingAdvices
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactLoanDisbursementPayments
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactLoanRepaymentSchedule
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactLoanClosures
+/PFL/Delta-Lake/Gold/pfl_dwh/FINNONE/FACT/FinnOne_FactLoanDisbursements
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimCustomerPhone
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimCustomerEmail
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimProduct
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimCollateralAsset
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimScheme
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimCustomer
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimCustomerAddress
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimCollateralMaster
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimBridgeLoanCollateral
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimCustomerIdentificationDetail
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/DIM/Pennant_DimBranch
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/FACT/Pennant_FactLoanRepaymentSchedule
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/FACT/Pennant_FactLoanDPDDetails
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/FACT/Pennant_FactLoan
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/FACT/Pennant_FactLoanDisbursements
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/FACT/Pennant_FactLoanReceiptAllocations
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/FACT/Pennant_FactLoanGSTTransactionDetails
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/FACT/Pennant_FactLoanDisbursementPayments
+/PFL/Delta-Lake/Gold/pfl_dwh/PENNANT/FACT/Pennant_FactLoanClosures
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/FACT/Lentra_FactLoanDisbursementPayments
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/FACT/Lentra_FactLoanGSTTransactionDetails
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/FACT/Lentra_FactApplication
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/FACT/Lentra_FactLoanReceiptAllocations
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/FACT/Lentra_FactLoanRepaymentSchedule
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/FACT/Lentra_FactLoanDPDDetails
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/FACT/Lentra_FactLoan
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/FACT/Lentra_FactLoanDisbursements
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/FACT/Lentra_FactLoanClosures
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimBranch
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimCustomer
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimCustomerEmail
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimCustomerAddress
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimCollateralMaster
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimBridgeLoanCollateral
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimCustomerIdentificationDetail
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimCollateralAsset
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimProduct
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimScheme
+/PFL/Delta-Lake/Gold/pfl_dwh/LENTRA/DIM/Lentra_DimCustomerPhone
 
-**Repository:** pfl-repo-dbx-datalake  
-**Overall Status:** **FAIL**  
-**Errors:** 1  
-**Warnings:** 9  
-**Info:** 5
-
-
-## Findings by Category
-
-| Category | Errors | Warnings | Info |
-| --- | --- | --- | --- |
-| azure_residue | 0 | 9 | 0 |
-| configuration | 1 | 0 | 0 |
-| dependency | 0 | 0 | 1 |
-| hardcoded_secret | 0 | 0 | 1 |
-| rule_validation | 0 | 0 | 1 |
-| syntax | 0 | 0 | 1 |
-| unsupported_sdk | 0 | 0 | 1 |
-
-
-## Errors
-
-| Category | Notebook | Message | Detail |
-| --- | --- | --- | --- |
-| configuration | - | No rules loaded for category 'api', which is needed by at least one transformation candidate | - |
-
-
-## Warnings
-
-| Category | Notebook | Message | Detail |
-| --- | --- | --- | --- |
-| azure_residue | PFL/Delta-Lake/Notebook_Execution/MS_Dynamic/lentra_ms_dynamics.py | Expected residual hardcoded_url (flagged for manual review, not auto-replaced) | jdbc:sqlserver://10.110.13.100;databaseName=Magma_Staging_Prod |
-| azure_residue | PFL/Delta-Lake/Notebook_Execution/MS_Dynamic/pennant_ms_dynamics.py | Expected residual hardcoded_url (flagged for manual review, not auto-replaced) | jdbc:sqlserver://10.110.13.100;databaseName=Magma_Staging_Prod |
-| azure_residue | PFL/Delta-Lake/Notebook_Execution/MS_Dynamic_New_CRM/cca_new_ms_dynamics.py | Expected residual hardcoded_url (flagged for manual review, not auto-replaced) | jdbc:sqlserver://10.110.13.100;databaseName=PFL_PROD |
-| azure_residue | PFL/Delta-Lake/Notebook_Execution/MS_Dynamic_New_CRM/finnone_new_ms_dynamics.py | Expected residual hardcoded_url (flagged for manual review, not auto-replaced) | jdbc:sqlserver://10.110.13.100;databaseName=PFL_PROD |
-| azure_residue | PFL/Delta-Lake/Notebook_Execution/MS_Dynamic_New_CRM/lentra_new_ms_dynamics.py | Expected residual hardcoded_url (flagged for manual review, not auto-replaced) | jdbc:sqlserver://10.110.13.100;databaseName=PFL_PROD |
-| azure_residue | PFL/Delta-Lake/Notebook_Execution/MS_Dynamic_New_CRM/pennant_new_ms_dynamics.py | Expected residual hardcoded_url (flagged for manual review, not auto-replaced) | jdbc:sqlserver://10.110.13.100;databaseName=PFL_PROD |
-| azure_residue | PFL/Delta-Lake/Notebook_Execution/Transaction_Monitoring_Trackwizz_Report/Full_Load_Trackwizz.py | Expected residual hardcoded_url (flagged for manual review, not auto-replaced) | jdbc:sqlserver://10.110.14.75:1456;databaseName=PROD_TBDB |
-| azure_residue | PFL/Delta-Lake/Notebook_Execution/Transaction_Monitoring_Trackwizz_Report/Incremental_Load_Trackwizz.py | Expected residual hardcoded_url (flagged for manual review, not auto-replaced) | jdbc:sqlserver://commonkstprdb.poonawallafincorp.com:1456;databaseName=PROD_TBDB |
-| azure_residue | PFL/Delta-Lake/Notebook_Execution/Transaction_Monitoring_Trackwizz_Report/Rejection_cases_of_Trackwizz.py | Expected residual hardcoded_url (flagged for manual review, not auto-replaced) | jdbc:sqlserver://10.110.14.75:1456;databaseName=PROD_TBDB |
+ notebook_list:
+     - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Gold/pfl_dwh/CCA/DIM/CCA_DimBranch"
+     - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Notebook_Execution/AI_Bank_Assist_Agent/AI_Bank_Assist_Agent_Full_Chat_History"
+     - "/Workspace/Users/charless.binny@poonawallafincorp.com/pfl-repo-dbx-datalake/PFL/Delta-Lake/Notebook_Execution/ALM_Monthly_Summary/ALM_Monthly_Summary"
