@@ -230,7 +230,7 @@ class MigrationAnalyzer:
             f'{self.bucket_variable} = dbutils.widgets.get("{self.bucket_variable}")'
         )
         env_variable = "env"
-        env_config = 'import os\nenv = os.getenv("ENV","dev")'
+        # env_config = 'import os\nenv = os.getenv("ENV","dev")'
 
         # ------------------------------------------------------------
         # ABFSS storage paths
@@ -747,7 +747,7 @@ class MigrationAnalyzer:
                 notebook=notebook,
                 edit_type="add_target_config",
                 original_value= "",
-                resolved_value = 'import os\nenv = os.getenve("ENV", "dev")',
+                resolved_value = 'import os\nenv = os.getenv("ENV", "dev")',
                 line_number = 1,
                 notes = "Added import os and env configuration.",
                 construct_type = "target_environment_config",
