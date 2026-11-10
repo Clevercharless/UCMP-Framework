@@ -19,7 +19,7 @@ from pyspark.storagelevel import StorageLevel
 # Ensure you have write permission to this folder.
 
 REPORT_BASE_PATH = (
-    "/Workspace/Users/your_email/Validation_Reports"
+    "/Workspace/Users//charless.binny@poonawallafincorp.com/validation/Validation_Reports"
 )
 
 # Generate timestamp once per notebook execution
@@ -90,40 +90,38 @@ def make_unique_columns(df):
 FILE_PAIRS = [
 
     {
-        "name": "Finnone_Receipt_RT_AutoDebit",
-        "azure": "/Workspace/Users/puram.gangadhar@poonawallafincorp.com/validation_files/Finnone_Receipt_RT_AutoDebit.csv",
-        "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlikapps/qlik_apps/Dashbord_Imports/Finnone_Receipt_RT/Finnone_Receipt_RT_AutoDebit.csv",
+        "name": "cca_disbursal_data",
+        "azure": "/Workspace/Users/charless.binny@poonawallafincorp.com/validation/Validation_files/CCA_Disbursal_disbursal_tracking_report.csv",
+        "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlik_apps/MD_Disbursal_RealTime/archive/2026-11-09/CCA_Disbursal_disbursal_tracking_report.csv",
     },
-
     {
-        "name": "Finnone_Receipt_RT",
-        "azure": "/Volumes/pfl_dev_admin_catalog/temp/temp_upload/qlik_reporting_vol/Finnone_Receipt_RT.csv",
-        "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlikapps/qlik_apps/Dashbord_Imports/Finnone_Receipt_RT/Finnone_Receipt_RT.csv",
+        "name": "cca_login_data",
+        "azure": "/Workspace/Users/charless.binny@poonawallafincorp.com/validation/Validation_files/CCA_Login_disbursal_tracking_report.csv",
+        "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlik_apps/MD_Disbursal_RealTime/archive/2026-11-09/CCA_Login_disbursal_tracking_report.csv",
     },
-
     {
-        "name": "Finnone_Receipt_RT_NACH_Removed",
-        "azure": "/Workspace/Users/puram.gangadhar@poonawallafincorp.com/validation_files/Finnone_Receipt_RT_NACH_Removed.csv",
-        "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlikapps/qlik_apps/Dashbord_Imports/Finnone_Receipt_RT/Finnone_Receipt_RT.csv",
-    },
-
-    {
-        "name": "Finnone_Receipt_RT_NACH",
-        "azure": "/Volumes/pfl_dev_admin_catalog/temp/temp_upload/qlik_reporting_vol/nach_parts/",
-        "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlikapps/dart-blob-reports/Finnone_Receipt_RT_Lite/Finnone_Receipt_RT_NACH/Finnone_Receipt_RT_NACH.csv",
-    },
-
-    {
-        "name": "PayTM_STPL_Dashboard",
-        "azure": "/Workspace/Users/puram.gangadhar@poonawallafincorp.com/validation_files/MTD_Disbursal_LoanBand_Geo_ROI_Tenure_Band_Cuts.csv",
-        "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlikapps/qlik_apps/PayTM_STPL/MTD_disbursal/archive/2026-11-09/MTD_Disbursal_LoanBand_Geo_ROI_Tenure_Band_Cuts.csv",
-    },
-
-    {
-        "name": "Insta_STPL_Dashboard",
-        "azure": "/Workspace/Users/puram.gangadhar@poonawallafincorp.com/validation_files/MTD_Disbursal_LoanBand_Geo_ROI_Tenure_Band_Cuts_insta.csv",
-        "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlikapps/qlik_apps/PL_INSTA_STPL/MTD_disbursal/archive/2026-11-09/MTD_Disbursal_LoanBand_Geo_ROI_Tenure_Band_Cuts.csv",
+        "name": "cca_sanction_data",
+        "azure": "/Workspace/Users/charless.binny@poonawallafincorp.com/validation/Validation_files/CCA_Sanctioned_disbursal_tracking_report.csv",
+        "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlik_apps/MD_Disbursal_RealTime/archive/2026-11-09/CCA_Sanctioned_disbursal_tracking_report.csv",
     }
+
+    # {
+    #     "name": "Finnone_Receipt_RT_NACH",
+    #     "azure": "/Volumes/pfl_dev_admin_catalog/temp/temp_upload/qlik_reporting_vol/nach_parts/",
+    #     "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlikapps/dart-blob-reports/Finnone_Receipt_RT_Lite/Finnone_Receipt_RT_NACH/Finnone_Receipt_RT_NACH.csv",
+    # },
+
+    # {
+    #     "name": "PayTM_STPL_Dashboard",
+    #     "azure": "/Workspace/Users/puram.gangadhar@poonawallafincorp.com/validation_files/MTD_Disbursal_LoanBand_Geo_ROI_Tenure_Band_Cuts.csv",
+    #     "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlikapps/qlik_apps/PayTM_STPL/MTD_disbursal/archive/2026-11-09/MTD_Disbursal_LoanBand_Geo_ROI_Tenure_Band_Cuts.csv",
+    # },
+
+    # {
+    #     "name": "Insta_STPL_Dashboard",
+    #     "azure": "/Workspace/Users/puram.gangadhar@poonawallafincorp.com/validation_files/MTD_Disbursal_LoanBand_Geo_ROI_Tenure_Band_Cuts_insta.csv",
+    #     "aws": "s3://bkt-dl-raw-prod-tableau-apps-aps1/qlikapps/qlik_apps/PL_INSTA_STPL/MTD_disbursal/archive/2026-11-09/MTD_Disbursal_LoanBand_Geo_ROI_Tenure_Band_Cuts.csv",
+    # }
 
 ]
 
@@ -354,148 +352,51 @@ for pair in FILE_PAIRS:
 
         for col in azure_df.columns:
 
-            if col not in aws_df.columns:
+        # Null count
+        az_null = azure_df.filter(F.col(col).isNull()).count()
+        aws_null = aws_df.filter(F.col(col).isNull()).count()
 
-                results = {
-                    "Null Count": (None, "COLUMN_MISSING"),
-                    "Distinct Count": (None, "COLUMN_MISSING"),
-                    "White Space": (None, "COLUMN_MISSING"),
-                    "Min Value": (None, "COLUMN_MISSING"),
-                    "Max Value": (None, "COLUMN_MISSING")
-                }
+        # Distinct count
+        az_distinct = azure_df.select(col).distinct().count()
+        aws_distinct = aws_df.select(col).distinct().count()
 
-            else:
+        # White space count
+        az_ws = azure_df.filter(
+            F.col(col).cast("string") !=
+            F.trim(F.col(col).cast("string"))
+        ).count()
 
-                # Null count
-                az_null = (
-                    azure_df
-                    .filter(F.col(col).isNull())
-                    .count()
-                )
+        aws_ws = aws_df.filter(
+            F.col(col).cast("string") !=
+            F.trim(F.col(col).cast("string"))
+        ).count()
 
-                aws_null = (
-                    aws_df
-                    .filter(F.col(col).isNull())
-                    .count()
-                )
+        # Min value
+        az_min = azure_df.select(F.min(col)).first()[0]
+        aws_min = aws_df.select(F.min(col)).first()[0]
 
-                # Distinct count
-                az_distinct = (
-                    azure_df
-                    .select(col)
-                    .distinct()
-                    .count()
-                )
+        # Max value
+        az_max = azure_df.select(F.max(col)).first()[0]
+        aws_max = aws_df.select(F.max(col)).first()[0]
 
-                aws_distinct = (
-                    aws_df
-                    .select(col)
-                    .distinct()
-                    .count()
-                )
+        results = {
+            "Null Count":     (az_null, aws_null),
+            "Distinct Count": (az_distinct, aws_distinct),
+            "White Space":    (az_ws, aws_ws),
+            "Min Value":      (az_min, aws_min),
+            "Max Value":      (az_max, aws_max),
+        }
 
-                # White space count
-                az_ws = (
-                    azure_df
-                    .filter(
-                        F.col(col).cast("string") !=
-                        F.trim(F.col(col).cast("string"))
-                    )
-                    .count()
-                )
+        failed_list = [name for name, (a, b) in results.items() if a != b]
+        column_failed_checks += len(failed_list)
 
-                aws_ws = (
-                    aws_df
-                    .filter(
-                        F.col(col).cast("string") !=
-                        F.trim(F.col(col).cast("string"))
-                    )
-                    .count()
-                )
+        row = [col]
+        for name in CHECKS:
+            a, b = results[name]
+            row += [str(a), str(b)]
+        row += ["PASS" if not failed_list else "FAIL", ", ".join(failed_list)]
 
-                # Min value
-                az_min = (
-                    azure_df
-                    .select(F.min(col))
-                    .first()[0]
-                )
-
-                aws_min = (
-                    aws_df
-                    .select(F.min(col))
-                    .first()[0]
-                )
-
-                # Max value
-                az_max = (
-                    azure_df
-                    .select(F.max(col))
-                    .first()[0]
-                )
-
-                aws_max = (
-                    aws_df
-                    .select(F.max(col))
-                    .first()[0]
-                )
-
-                results = {
-
-                    "Null Count": (az_null, aws_null),
-
-                    "Distinct Count": (
-                        az_distinct,
-                        aws_distinct
-                    ),
-
-                    "White Space": (
-                        az_ws,
-                        aws_ws
-                    ),
-
-                    "Min Value": (
-                        az_min,
-                        aws_min
-                    ),
-
-                    "Max Value": (
-                        az_max,
-                        aws_max
-                    )
-
-                }
-
-            # Identify failed checks
-            failed_list = [
-
-                name
-                for name, (a, b) in results.items()
-                if a != b
-
-            ]
-
-            column_failed_checks += len(failed_list)
-
-            row = [col]
-
-            for name in CHECKS:
-
-                a, b = results[name]
-
-                row += [
-                    str(a),
-                    str(b)
-                ]
-
-            row += [
-
-                "PASS" if not failed_list else "FAIL",
-
-                ", ".join(failed_list)
-
-            ]
-
-            column_rows.append(tuple(row))
+        column_rows.append(tuple(row))
 
         # ----------------------------------------------------
         # CREATE COLUMN REPORT SCHEMA
